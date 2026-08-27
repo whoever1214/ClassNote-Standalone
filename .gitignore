@@ -1,0 +1,18 @@
+bin/
+obj/
+dist/
+dist-v2/
+publish/
+*.user
+*.suo
+.vs/
+
+# 测试产物（含备份数据库，禁止入库）
+TestResults/
+*.log
+
+# SenseVoice 模型二进制资产（约 230MB，非源码，不入库）
+ClassNote/Models/sensevoice/
+
+# 本地 NuGet 配置（含镜像源，按需自建）
+# ClassNote/NuGet.config
