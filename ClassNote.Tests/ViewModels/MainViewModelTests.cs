@@ -119,10 +119,20 @@ public class MainViewModelTests
     public void HasPendingSessions_TrueWhenProcessing()
     {
         // Arrange
-        _vm.RecentSessions.Add(new Session { Id = Guid.NewGuid(), Course = "数学", Status = "ended" });
+        _vm.RecentSessions.Add(new Session { Id = Guid.NewGuid(), Course = "数学", Status = "processing" });
 
         // Assert
         Assert.True(_vm.HasPendingSessions);
+    }
+
+    [Fact]
+    public void HasPendingSessions_FalseWhenEnded()
+    {
+        // Arrange — ended 是终态，不应再触发主页轮询（EV-01 修复后的行为）
+        _vm.RecentSessions.Add(new Session { Id = Guid.NewGuid(), Course = "数学", Status = "ended" });
+
+        // Assert
+        Assert.False(_vm.HasPendingSessions);
     }
 
     [Fact]
