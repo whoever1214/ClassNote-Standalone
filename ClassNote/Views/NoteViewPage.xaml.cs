@@ -35,6 +35,16 @@ public partial class NoteViewPage : Page
         try
         {
             await MarkdownBrowser.EnsureCoreWebView2Async();
+
+            // 本地化 MathJax：将虚拟主机 appassets.local 映射到输出目录 assets 文件夹，
+            // 使笔记 HTML 无需联网即可加载数学公式渲染脚本（离线渲染）。
+            var assetsDir = System.IO.Path.Combine(AppContext.BaseDirectory, "assets");
+            if (MarkdownBrowser.CoreWebView2 != null && System.IO.Directory.Exists(assetsDir))
+            {
+                MarkdownBrowser.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                    "appassets.local", assetsDir,
+                    Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+            }
         }
         catch
         {

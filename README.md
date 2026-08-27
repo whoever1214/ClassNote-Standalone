@@ -46,7 +46,7 @@ dotnet build -c Release
 - **STT 推理**：Microsoft.ML.OnnxRuntime 1.20.0（CPU）
 - **OCR**：Windows.Media.Ocr（系统内置）
 - **LLM**：OpenAI 兼容 HTTP API（Newtonsoft.Json）
-- **Markdown 渲染**：Markdig 0.37.0
+- **Markdown 渲染**：Markdig 0.37.0（数学公式经本地内置 MathJax 渲染，离线可用）
 - **PDF 导出**：QuestPDF 2024.12.0（含 Lato 字体包 + 中文字体自动注册）
 - **数据存储**：SQLite（System.Data.SQLite.Core 1.0.119）
 - **WebView2**：Microsoft.Web.WebView2 1.0.2903.40（笔记渲染视图）

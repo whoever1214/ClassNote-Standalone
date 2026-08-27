@@ -15,6 +15,7 @@
     <None Include="models\sensevoice\model_quant.onnx" CopyToOutputDirectory="PreserveNewest" />
     <None Include="models\sensevoice\tokens.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="models\sensevoice\am.mvn" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="assets\mathjax-tex-svg.js" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />

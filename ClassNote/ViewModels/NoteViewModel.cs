@@ -93,7 +93,7 @@ public class NoteViewModel : BaseViewModel
 <html>
 <head>
 <meta charset='utf-8'>
-<meta http-equiv='Content-Security-Policy' content=""default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; img-src data: https:;"">
+<meta http-equiv='Content-Security-Policy' content=""default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://appassets.local; img-src data: https:;"">
 <style>
   body {{
     font-family: 'Segoe UI', 'Microsoft YaHei', -apple-system, sans-serif;
@@ -146,7 +146,7 @@ public class NoteViewModel : BaseViewModel
     svg: {{ fontCache: 'global' }}
   }};
 </script>
-<script async src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js'></script>
+<script async src='https://appassets.local/mathjax-tex-svg.js'></script>
 </head>
 <body>
 {bodyHtml}

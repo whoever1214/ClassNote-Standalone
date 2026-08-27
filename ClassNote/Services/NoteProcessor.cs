@@ -91,8 +91,11 @@ public sealed class NoteProcessor : INoteProcessor
 
         try
         {
-            note.ContentMarkdown = await _llm.GenerateNoteAsync(
+            var md = await _llm.GenerateNoteAsync(
                 session.Course, transcript, ocrSb.ToString(), progress);
+            if (!IsPlausibleNote(md, session.Course))
+                throw new InvalidOperationException("LLM 返回内容不符合笔记格式（过短且无结构）");
+            note.ContentMarkdown = md;
         }
         catch (Exception ex)
         {
@@ -104,6 +107,20 @@ public sealed class NoteProcessor : INoteProcessor
         repo.SaveNote(note);
         repo.UpdateSessionStatus(sessionId, "completed");
         progress?.Report("完成");
+    }
+
+    /// <summary>
+    /// 朴素但保守的"像不像一篇笔记"校验：内容非空（已在 LlmService 保证）之外，
+    /// 若既不含标题（#），又不含课程名，且长度 < 100，判定为无效输出。
+    /// 为避免误杀，阈值取保守值——正常课堂笔记几乎必然含课程名或 Markdown 标题。
+    /// </summary>
+    private static bool IsPlausibleNote(string content, string course)
+    {
+        if (string.IsNullOrWhiteSpace(content)) return false;
+        if (content.Length >= 100) return true;
+        if (!string.IsNullOrEmpty(course) && content.Contains(course, StringComparison.Ordinal)) return true;
+        if (content.Contains('#')) return true;
+        return false;
     }
 
     private static string BuildFallbackNote(string course, string transcript, string ocrText)

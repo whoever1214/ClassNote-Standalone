@@ -101,7 +101,15 @@ public class ScreenshotService : IScreenshotService
     {
         using var bitmap = CaptureScreen();
         var hash = ComputeHash(bitmap);
-        double change = _previousHash != null ? CompareHash(_previousHash, hash) : 1.0;
+
+        // 首帧：无前帧可比较，作为基准并直接捕获为首张"新幻灯片"（避免首帧被误丢弃）
+        if (_previousHash == null)
+        {
+            _previousHash = hash;
+            return CaptureWithType(bitmap, ScreenshotType.NewSlide);
+        }
+
+        double change = CompareHash(_previousHash, hash);
         _previousHash = hash;
 
         if (!_videoMode)
@@ -166,22 +174,47 @@ public class ScreenshotService : IScreenshotService
 
     private static byte[] ComputeHash(Bitmap bmp)
     {
-        // 简化 pHash: 缩放 8x8 → 灰度 → 计算均值 → 生成 64-bit hash
-        using var small = new Bitmap(bmp, new Size(8, 8));
-        byte[] hash = new byte[8];
-        float total = 0;
-        float[] pixels = new float[64];
-        for (int y = 0; y < 8; y++)
-            for (int x = 0; x < 8; x++)
+        // DCT 感知哈希（标准 pHash）：32x32 灰度 → 2D DCT → 取左上 8x8（不含 DC）→ 与中位数比较 → 64-bit
+        // 相较此前的 8x8 均值哈希，对亮度噪声与轻微平移更稳健，分类更接近真实感知差异。
+        const int size = 32;
+        using var small = new Bitmap(bmp, new Size(size, size));
+
+        double[,] gray = new double[size, size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
             {
                 var px = small.GetPixel(x, y);
-                float v = (px.R + px.G + px.B) / 3f;
-                pixels[y * 8 + x] = v;
-                total += v;
+                gray[y, x] = 0.299 * px.R + 0.587 * px.G + 0.114 * px.B;
             }
-        float avg = total / 64;
+
+        // 只计算左上 8x8 频域分量（DCT-II，可分离直接二重求和）
+        double[,] dct = new double[8, 8];
+        for (int u = 0; u < 8; u++)
+            for (int v = 0; v < 8; v++)
+            {
+                double sum = 0;
+                for (int x = 0; x < size; x++)
+                    for (int y = 0; y < size; y++)
+                        sum += gray[y, x]
+                            * Math.Cos((2.0 * x + 1) * u * Math.PI / (2.0 * size))
+                            * Math.Cos((2.0 * y + 1) * v * Math.PI / (2.0 * size));
+                dct[u, v] = sum;
+            }
+
+        // 取 [1..8)×[1..8)，排除 DC 分量
+        double[] coeffs = new double[64];
+        int k = 0;
+        for (int u = 1; u <= 8; u++)
+            for (int v = 1; v <= 8; v++)
+                coeffs[k++] = dct[u - 1, v - 1];
+
+        var sorted = (double[])coeffs.Clone();
+        Array.Sort(sorted);
+        double median = (sorted[31] + sorted[32]) / 2.0;
+
+        byte[] hash = new byte[8];
         for (int i = 0; i < 64; i++)
-            if (pixels[i] >= avg)
+            if (coeffs[i] > median)
                 hash[i / 8] |= (byte)(1 << (i % 8));
         return hash;
     }
