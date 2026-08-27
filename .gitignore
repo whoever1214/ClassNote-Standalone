@@ -11,6 +11,9 @@ publish/
 TestResults/
 *.log
 
+# 分发包（体积大，不入库）
+*.zip
+
 # SenseVoice 模型二进制资产（约 230MB，非源码，不入库）
 ClassNote/Models/sensevoice/
 
