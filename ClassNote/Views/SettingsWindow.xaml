@@ -9,59 +9,60 @@
         WindowStyle="SingleBorderWindow">
     <Grid Margin="24">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="LLM API Key"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="1" x:Name="ApiKeyBox"
-                 Height="34" Margin="0,0,0,12"
-                 BorderBrush="#CCC" VerticalContentAlignment="Center" />
+        <!-- 表单内容放在 ScrollViewer 中：窗口空间不足时可用鼠标滚轮上下滚动 -->
+        <ScrollViewer Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
 
-        <TextBlock Grid.Row="2" Text="API 基础地址（OpenAI 兼容，默认 DeepSeek）"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="3" x:Name="BaseUrlBox"
-                 Height="34" Margin="0,0,0,12"
-                 BorderBrush="#CCC" VerticalContentAlignment="Center" />
+                <TextBlock Text="API 基础地址（OpenAI 兼容，默认 DeepSeek）"
+                           FontSize="13" Foreground="#555" Margin="0,0,0,4" />
+                <TextBox x:Name="BaseUrlBox"
+                         Height="34" Margin="0,0,0,12"
+                         BorderBrush="#CCC" VerticalContentAlignment="Center" />
 
-        <TextBlock Grid.Row="4" Text="模型名称"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="5" x:Name="ModelBox"
-                 Height="34" Margin="0,0,0,12"
-                 BorderBrush="#CCC" VerticalContentAlignment="Center" />
+                <TextBlock Text="LLM API Key"
+                           FontSize="13" Foreground="#555" Margin="0,0,0,4" />
+                <TextBox x:Name="ApiKeyBox"
+                         Height="34" Margin="0,0,0,12"
+                         BorderBrush="#CCC" VerticalContentAlignment="Center" />
 
-        <TextBlock Grid.Row="6" Text="备用 API Key（可选，主配置失败时自动切换）"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="7" x:Name="FallbackApiKeyBox"
-                 Height="34" Margin="0,0,0,12"
-                 BorderBrush="#CCC" VerticalContentAlignment="Center" />
+                <TextBlock Text="模型名称"
+                           FontSize="13" Foreground="#555" Margin="0,0,0,4" />
+                <TextBox x:Name="ModelBox"
+                         Height="34" Margin="0,0,0,12"
+                         BorderBrush="#CCC" VerticalContentAlignment="Center" />
 
-        <TextBlock Grid.Row="8" Text="备用 API 基础地址（可选）"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="9" x:Name="FallbackBaseUrlBox"
-                 Height="34" Margin="0,0,0,12"
-                 BorderBrush="#CCC" VerticalContentAlignment="Center" />
+                <TextBlock Text="备用 API Key（可选，主配置失败时自动切换）"
+                           FontSize="13" Foreground="#555" Margin="0,0,0,4" />
+                <TextBox x:Name="FallbackApiKeyBox"
+                         Height="34" Margin="0,0,0,12"
+                         BorderBrush="#CCC" VerticalContentAlignment="Center" />
 
-        <TextBlock Grid.Row="10" FontSize="11" Foreground="#999" TextWrapping="Wrap"
-                   Text="说明：新软件为纯客户端单机运行，STT 与 OCR 在本地完成，仅 LLM 笔记生成需要 API Key。Key 仅保存在本机（DPAPI 加密）。" />
+                <TextBlock Text="备用 API 基础地址（可选）"
+                           FontSize="13" Foreground="#555" Margin="0,0,0,4" />
+                <TextBox x:Name="FallbackBaseUrlBox"
+                         Height="34" Margin="0,0,0,12"
+                         BorderBrush="#CCC" VerticalContentAlignment="Center" />
 
-        <StackPanel Grid.Row="11" Orientation="Horizontal" HorizontalAlignment="Right">
+                <TextBlock FontSize="11" Foreground="#999" TextWrapping="Wrap"
+                           Text="说明：新软件为纯客户端单机运行，STT 与 OCR 在本地完成，仅 LLM 笔记生成需要 API Key。Key 仅保存在本机（DPAPI 加密）。" />
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 按钮区域独立于滚动区之外，固定在窗口底部，始终可见 -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="取消" Width="90" Height="36"
                     Margin="0,0,12,0"
                     Background="#EEE" Foreground="#333"
                     Click="CancelButton_Click" />
-            <Button Content="保存" Width="90" Height="36"
+            <Button Content="确定" Width="90" Height="36"
                     Background="#1976D2" Foreground="White" FontWeight="SemiBold"
                     Click="SaveButton_Click" />
         </StackPanel>
