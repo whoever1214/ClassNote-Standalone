@@ -13,9 +13,6 @@ public interface ILlmService
 {
     /// <summary>生成课堂笔记（Markdown）。</summary>
     Task<string> GenerateNoteAsync(string course, string transcript, string ocrText, IProgress<string>? progress = null);
-
-    /// <summary>生成思维导图（JSON 层级数据）。</summary>
-    Task<object?> GenerateMindmapAsync(string course, string transcript, IProgress<string>? progress = null);
 }
 
 public sealed class LlmService : ILlmService
@@ -24,39 +21,12 @@ public sealed class LlmService : ILlmService
 
     private const string NoteSystemPrompt =
         "你是一名资深助教，负责将课堂录音转写和课件截图 OCR 内容整理成一份结构清晰的课堂笔记。用 Markdown 输出。";
-    private const string MindmapSystemPrompt =
-        "你是一名知识整理助手，请根据课堂内容提炼知识点，输出 JSON 层级结构供思维导图使用。只输出 JSON，不要任何额外文字。";
 
     public async Task<string> GenerateNoteAsync(string course, string transcript, string ocrText, IProgress<string>? progress = null)
     {
         progress?.Report("正在生成笔记…");
         var user = BuildNotePrompt(course, transcript, ocrText);
         return await ChatWithFallbackAsync(NoteSystemPrompt, user);
-    }
-
-    public async Task<object?> GenerateMindmapAsync(string course, string transcript, IProgress<string>? progress = null)
-    {
-        progress?.Report("正在生成思维导图…");
-        var sb = new StringBuilder();
-        sb.Append("课程：").Append(course).AppendLine();
-        sb.AppendLine("课堂内容（转写）：");
-        sb.AppendLine(Truncate(transcript));
-        sb.AppendLine();
-        sb.AppendLine("请提炼知识点，输出 JSON 层级结构，格式示例：");
-        sb.AppendLine("{ \"name\": \"主题\", \"children\": [ { \"name\": \"子主题\", \"children\": [] } ] }");
-        var user = sb.ToString();
-
-        var json = await ChatWithFallbackAsync(MindmapSystemPrompt, user);
-
-        json = ExtractJson(json);
-        try
-        {
-            return JsonConvert.DeserializeObject(json);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private (string Key, string BaseUrl, string Model) GetPrimaryConfig()
@@ -193,16 +163,6 @@ public sealed class LlmService : ILlmService
 
     private static string Truncate(string s, int max = 20000)
         => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max]);
-
-    private static string ExtractJson(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "{}";
-        int start = text.IndexOf('{');
-        int end = text.LastIndexOf('}');
-        if (start >= 0 && end > start)
-            return text.Substring(start, end - start + 1);
-        return text;
-    }
 
     private sealed class ChatResponse
     {

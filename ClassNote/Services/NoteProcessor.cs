@@ -8,7 +8,7 @@ namespace ClassNote.Services;
 
 /// <summary>
 /// 课堂笔记处理管线编排器：在录音结束后依次执行
-/// STT（转写）→ OCR（截图识别）→ LLM（生成笔记 + 思维导图），
+/// STT（转写）→ OCR（截图识别）→ LLM（生成笔记），
 /// 全部在客户端本地完成，无需服务端。
 /// </summary>
 public interface INoteProcessor
@@ -82,7 +82,7 @@ public sealed class NoteProcessor : INoteProcessor
 
         progress?.Report("正在用 LLM 生成笔记…");
 
-        // 3. LLM 生成笔记 + 思维导图
+        // 3. LLM 生成笔记
         Note note = new()
         {
             SessionId = sessionId,
@@ -99,15 +99,6 @@ public sealed class NoteProcessor : INoteProcessor
             // LLM 失败时用转写/OCR 原文兜底生成基础笔记
             note.ContentMarkdown = BuildFallbackNote(session.Course, transcript, ocrSb.ToString());
             note.Summary = $"笔记生成失败：{ex.Message}";
-        }
-
-        try
-        {
-            note.MindmapData = await _llm.GenerateMindmapAsync(session.Course, transcript, progress);
-        }
-        catch
-        {
-            note.MindmapData = null;
         }
 
         repo.SaveNote(note);

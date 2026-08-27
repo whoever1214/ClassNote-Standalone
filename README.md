@@ -9,7 +9,7 @@
 - **自动截屏**：周期性全屏抓取 + pHash 变化检测，智能区分"批注 / 新幻灯片 / 视频"三类画面。
 - **本地 STT**：SenseVoice-Small ONNX（INT8 量化）+ onnxruntime CPU 推理，中文识别准、自带标点，全程离线。
 - **本地 OCR**：调用 Windows 10/11 内置 OCR 引擎（Windows.Media.Ocr），识别截图文字。
-- **LLM 笔记生成**：调用 OpenAI 兼容 API（默认 DeepSeek），把"转写 + 截图文字"整理为 Markdown 笔记；也支持思维导图数据。
+- **LLM 笔记生成**：调用 OpenAI 兼容 API（默认 DeepSeek），把"转写 + 截图文字"整理为 Markdown 笔记。
 - **PDF 导出**：笔记本地渲染为 PDF（QuestPDF），保存到桌面。
 - **数据本地化**：会话 / 截图 / 笔记全部存于本机 SQLite（%LOCALAPPDATA%/ClassNote/classnote.db）。
 

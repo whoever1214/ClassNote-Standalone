@@ -298,14 +298,12 @@ public sealed class LocalRepository : IDisposable
             del.ExecuteNonQuery();
 
             using var cmd = new SQLiteCommand(@"
-                INSERT INTO notes (id, session_id, title, content_markdown, mindmap_data, summary, key_points, created_at, updated_at)
-                VALUES (@id, @s, @t, @mk, @mm, @sum, @kp, @ca, @ua)", db);
+                INSERT INTO notes (id, session_id, title, content_markdown, summary, key_points, created_at, updated_at)
+                VALUES (@id, @s, @t, @mk, @sum, @kp, @ca, @ua)", db);
             cmd.Parameters.AddWithValue("@id", id.ToString());
             cmd.Parameters.AddWithValue("@s", note.SessionId.ToString());
             cmd.Parameters.AddWithValue("@t", (object?)note.Title ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@mk", (object?)note.ContentMarkdown ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@mm", note.MindmapData == null ? (object)DBNull.Value :
-                Newtonsoft.Json.JsonConvert.SerializeObject(note.MindmapData));
             cmd.Parameters.AddWithValue("@sum", (object?)note.Summary ?? DBNull.Value);
             cmd.Parameters.AddWithValue("@kp", DBNull.Value);
             cmd.Parameters.AddWithValue("@ca", Now());
@@ -319,7 +317,7 @@ public sealed class LocalRepository : IDisposable
         using var db = NewConnection();
         db.Open();
         using var cmd = new SQLiteCommand(
-            "SELECT id, session_id, title, content_markdown, mindmap_data, summary FROM notes WHERE session_id = @s", db);
+            "SELECT id, session_id, title, content_markdown, summary FROM notes WHERE session_id = @s", db);
         cmd.Parameters.AddWithValue("@s", sessionId.ToString());
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
@@ -331,16 +329,8 @@ public sealed class LocalRepository : IDisposable
             SessionId = Guid.Parse(reader.GetString(1)),
             Title = reader.IsDBNull(2) ? null : reader.GetString(2),
             ContentMarkdown = reader.IsDBNull(3) ? null : reader.GetString(3),
-            Summary = reader.IsDBNull(5) ? null : reader.GetString(5),
+            Summary = reader.IsDBNull(4) ? null : reader.GetString(4),
         };
-        if (!reader.IsDBNull(4))
-        {
-            try
-            {
-                note.MindmapData = Newtonsoft.Json.JsonConvert.DeserializeObject(reader.GetString(4));
-            }
-            catch { note.MindmapData = null; }
-        }
         return note;
     }
 
