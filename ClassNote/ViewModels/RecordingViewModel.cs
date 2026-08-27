@@ -14,12 +14,12 @@ public class RecordingViewModel : BaseViewModel
     private readonly Guid _sessionId;
 
     private string _statusText = "准备中";
-    private bool _isLoading;
     private int _screenshotCount;
     private double _elapsedSeconds;
     private string _selectedMic = "";
     private string[] _availableMics = Array.Empty<string>();
     private DispatcherTimer? _elapsedTimer;
+    private Task? _backgroundProcessing;
 
     public RecordingViewModel(Guid sessionId, IApiService api, IAudioService audio,
         IScreenshotService screenshot, IUploadService upload, string? micName = null,
@@ -41,8 +41,13 @@ public class RecordingViewModel : BaseViewModel
     }
 
     public string StatusText { get => _statusText; set { _statusText = value; OnPropertyChanged(); } }
-    public bool IsLoading { get => _isLoading; set { _isLoading = value; OnPropertyChanged(); } }
     public int ScreenshotCount { get => _screenshotCount; set { _screenshotCount = value; OnPropertyChanged(); } }
+
+    /// <summary>
+    /// 后台处理管线任务（录音停止后启动：STT → OCR → LLM）。
+    /// 页面在 quick-stop 后即可返回主页，此任务在后台独立完成。
+    /// </summary>
+    public Task? BackgroundProcessingTask => _backgroundProcessing;
     public double ElapsedSeconds { get => _elapsedSeconds; set { _elapsedSeconds = value; OnPropertyChanged(); OnPropertyChanged(nameof(ElapsedDisplay)); } }
     public string ElapsedDisplay => TimeSpan.FromSeconds(ElapsedSeconds).ToString(@"hh\:mm\:ss");
     public string SelectedMic { get => _selectedMic; set { _selectedMic = value; OnPropertyChanged(); } }
@@ -69,18 +74,26 @@ public class RecordingViewModel : BaseViewModel
 
     public async Task StopRecordingAsync()
     {
-        IsLoading = true;
+        // 快速收尾：停止采集 → 音频/截图入库 → 结束会话。
+        // 处理管线（STT → OCR → LLM）在后台执行，立即返回，不阻塞 UI。
+        string? audioPath = null;
         try
         {
-            await StopRecordingCoreAsync();
+            audioPath = await StopRecordingCoreAsync();
         }
-        finally
+        catch (Exception ex)
         {
-            IsLoading = false;
+            StatusText = $"停止失败: {ex.Message}";
+            return;
         }
+
+        // 后台处理音频（转写 / OCR / 生成笔记），完成后会话状态自动变为 completed
+        _backgroundProcessing = Task.Run(() => ProcessAsync(audioPath));
+        StatusText = "已停止";
     }
 
-    private async Task StopRecordingCoreAsync()
+    /// <summary>执行快速收尾，返回本次录音的音频路径（可能为 null）。</summary>
+    private async Task<string?> StopRecordingCoreAsync()
     {
         try
         {
@@ -114,21 +127,8 @@ public class RecordingViewModel : BaseViewModel
         }
         catch { /* 音频队列补发失败不影响结束 */ }
 
-        try
-        {
-            await _api.EndSessionAsync(_sessionId, (int)Math.Round(_elapsedSeconds));
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"停止失败: {ex.Message}";
-            return;
-        }
-
-        // 本地处理管线：STT → OCR → LLM（同步完成，结束后状态为"已停止"）
-        StatusText = "正在生成笔记…";
-        await ProcessAsync(audioPath);
-
-        StatusText = "已停止";
+        await _api.EndSessionAsync(_sessionId, (int)Math.Round(_elapsedSeconds));
+        return audioPath;
     }
 
     /// <summary>

@@ -161,6 +161,8 @@ public class RecordingViewModelTests
 
         // Act
         await vm.StopRecordingAsync();
+        if (vm.BackgroundProcessingTask != null)
+            await vm.BackgroundProcessingTask;
 
         // Assert
         _mockAudio.Verify(x => x.StopRecording(), Times.Once);
@@ -188,6 +190,8 @@ public class RecordingViewModelTests
 
         // Act
         await vm.StopRecordingAsync();
+        if (vm.BackgroundProcessingTask != null)
+            await vm.BackgroundProcessingTask;
 
         // Assert
         _mockUpload.Verify(x => x.UploadAudioAsync(_sessionId, audioFile, "audio.wav"), Times.Once);
@@ -211,6 +215,8 @@ public class RecordingViewModelTests
 
         // Act
         await vm.StopRecordingAsync();
+        if (vm.BackgroundProcessingTask != null)
+            await vm.BackgroundProcessingTask;
 
         // Assert
         _mockUpload.Verify(x => x.UploadAudioAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
@@ -236,6 +242,8 @@ public class RecordingViewModelTests
 
         // Act
         await vm.StopRecordingAsync();
+        if (vm.BackgroundProcessingTask != null)
+            await vm.BackgroundProcessingTask;
 
         // Assert — 音频失败不应中断结束流程，且已登记入队
         _mockUpload.Verify(x => x.EnqueueAudioAsync(_sessionId, audioFile, "audio.wav"), Times.Once);

@@ -63,16 +63,14 @@ public partial class RecordingPage : Page
     {
         EndButton.IsEnabled = false;
         EndButton.Content = "正在停止...";
-        UploadStatusText.Text = "正在保存并生成笔记...";
 
         _uiTimer.Stop();
         RecordingDot.Fill = Brushes.Gray;
-
-        await _viewModel.StopRecordingAsync();
-
-        EndButton.Content = "已完成";
         UploadProgressBar.Visibility = Visibility.Collapsed;
         UploadStatusText.Visibility = Visibility.Collapsed;
+
+        // 快速收尾后立即返回主页；音频转写等在后台完成
+        await _viewModel.StopRecordingAsync();
 
         RecordingEnded?.Invoke(this, EventArgs.Empty);
     }
