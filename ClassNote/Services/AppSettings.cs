@@ -84,7 +84,12 @@ public sealed class AppSettings
                 var json = File.ReadAllText(_filePath);
                 var loaded = JsonSerializer.Deserialize<AppSettingsData>(json);
                 if (loaded != null)
+                {
+                    // 落盘的是 DPAPI 密文，读入时解密为内存明文（旧版明文兼容读取）
+                    loaded.LlmApiKey = DpapiKeyProtector.Unprotect(loaded.LlmApiKey);
+                    loaded.LlmFallbackApiKey = DpapiKeyProtector.Unprotect(loaded.LlmFallbackApiKey);
                     return loaded;
+                }
             }
         }
         catch
@@ -97,7 +102,11 @@ public sealed class AppSettings
     private void Save(AppSettingsData data)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
-        var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        // 落盘副本：Key 经 DPAPI 加密后写入，内存中的明文不受影响
+        var forDisk = Clone(data);
+        forDisk.LlmApiKey = DpapiKeyProtector.Protect(forDisk.LlmApiKey);
+        forDisk.LlmFallbackApiKey = DpapiKeyProtector.Protect(forDisk.LlmFallbackApiKey);
+        var json = JsonSerializer.Serialize(forDisk, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
 

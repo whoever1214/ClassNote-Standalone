@@ -91,21 +91,52 @@ public sealed class LlmService : ILlmService
             temperature = 0.3,
         };
 
-        var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
-        request.Content = new StringContent(
-            JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+        // 瞬时性故障（429 / 5xx / 网络异常）指数退避重试，避免一次抖动就丢失 AI 整理能力
+        const int maxAttempts = 3;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+                request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+                request.Content = new StringContent(
+                    JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
-        var response = await Http.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException("LLM API 调用失败 (" + (int)response.StatusCode + "): " + Truncate(body, 300));
+                var response = await Http.SendAsync(request);
+                var body = await response.Content.ReadAsStringAsync();
 
-        var result = JsonConvert.DeserializeObject<ChatResponse>(body);
-        var content = result?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
-        if (string.IsNullOrWhiteSpace(content))
-            throw new InvalidOperationException("LLM 返回空内容");
-        return content;
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = JsonConvert.DeserializeObject<ChatResponse>(body);
+                    var content = result?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
+                    if (string.IsNullOrWhiteSpace(content))
+                        throw new InvalidOperationException("LLM 返回空内容");
+                    return content;
+                }
+
+                int status = (int)response.StatusCode;
+                bool transient = status == 429 || status >= 500;
+                if (transient && attempt < maxAttempts)
+                {
+                    await Task.Delay(BackoffDelay(attempt));
+                    continue;
+                }
+
+                throw new InvalidOperationException("LLM API 调用失败 (" + status + "): " + Truncate(body, 300));
+            }
+            catch (HttpRequestException) when (attempt < maxAttempts)
+            {
+                await Task.Delay(BackoffDelay(attempt));
+                // 继续下一轮重试
+            }
+        }
+    }
+
+    /// <summary>指数退避：500ms → 1000ms → 2000ms（封顶 5s）。</summary>
+    private static TimeSpan BackoffDelay(int attempt)
+    {
+        int ms = Math.Min(500 << (Math.Max(0, attempt - 1)), 5000);
+        return TimeSpan.FromMilliseconds(ms);
     }
 
     private static string BuildNotePrompt(string course, string transcript, string ocrText)
