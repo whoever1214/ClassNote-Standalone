@@ -118,9 +118,31 @@
                         </Grid.RowDefinitions>
 
                         <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                            <TextBlock Text="最近记录" FontSize="16" FontWeight="Bold" DockPanel.Dock="Left" />
-                            <TextBlock DockPanel.Dock="Right" Text="双击记录可查看笔记" FontSize="11"
-                                       Foreground="{StaticResource TextHintBrush}" VerticalAlignment="Center" />
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="最近记录" FontSize="16" FontWeight="Bold" />
+                                <TextBlock Text="双击记录可查看笔记" FontSize="11"
+                                           Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <CheckBox Content="全选" IsThreeState="True" Click="SelectAllCheckBox_Click"
+                                          IsChecked="{Binding SelectAll, Mode=OneWay}"
+                                          FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                          VerticalAlignment="Center"
+                                          ToolTip="全选 / 取消全选当前列表中的记录" />
+                                <TextBlock Text="{Binding SelectedCount, StringFormat=已选 {0} 项}" FontSize="12"
+                                           Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
+                                           VerticalAlignment="Center" />
+                                <Button x:Name="ExportPdfButton" Style="{StaticResource GhostButtonStyle}" Height="32"
+                                        Content="批量导出 PDF" Click="ExportPdfButton_Click" Margin="14,0,0,0"
+                                        IsEnabled="{Binding HasSelection}"
+                                        ToolTip="将选中的课堂笔记导出为 PDF 文件（尚未生成笔记的记录将自动跳过）" />
+                                <Button x:Name="DeleteSelectedButton" Style="{StaticResource DangerGhostButtonStyle}" Height="32"
+                                        Content="删除" Click="DeleteSelectedButton_Click" Margin="8,0,0,0"
+                                        IsEnabled="{Binding HasSelection}"
+                                        ToolTip="删除选中的记录（录音、截图与笔记将一并永久移除）" />
+                            </StackPanel>
                         </DockPanel>
 
                         <Grid Grid.Row="1">
@@ -131,27 +153,32 @@
                                     <DataTemplate>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36" />
                                                 <ColumnDefinition Width="104" />
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="148" />
                                                 <ColumnDefinition Width="112" />
                                             </Grid.ColumnDefinitions>
 
-                                            <Border Grid.Column="0" Background="{StaticResource HoverBrush}" CornerRadius="6"
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
+                                                      VerticalAlignment="Center"
+                                                      ToolTip="勾选后可用于批量导出 PDF 或删除" />
+
+                                            <Border Grid.Column="1" Background="{StaticResource HoverBrush}" CornerRadius="6"
                                                     Padding="9,3" VerticalAlignment="Center" HorizontalAlignment="Left">
                                                 <TextBlock Text="{Binding Course}" FontSize="12"
                                                            Foreground="{StaticResource TextSecondaryBrush}" />
                                             </Border>
 
-                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                            <TextBlock Grid.Column="2" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
                                                        TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                        Margin="0,0,8,0" />
 
-                                            <TextBlock Grid.Column="2" Text="{Binding StartTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                            <TextBlock Grid.Column="3" Text="{Binding StartTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
                                                        FontSize="12" Foreground="{StaticResource TextHintBrush}"
                                                        VerticalAlignment="Center" />
 
-                                            <Border Grid.Column="3" Background="#F4F5F8" CornerRadius="12" Padding="11,3"
+                                            <Border Grid.Column="4" Background="#F4F5F8" CornerRadius="12" Padding="11,3"
                                                     VerticalAlignment="Center" HorizontalAlignment="Left">
                                                 <StackPanel Orientation="Horizontal">
                                                     <Ellipse Width="8" Height="8"
