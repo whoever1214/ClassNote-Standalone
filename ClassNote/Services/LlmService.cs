@@ -31,8 +31,7 @@ public sealed class LlmService : ILlmService
     {
         progress?.Report("正在生成笔记…");
         var user = BuildNotePrompt(course, transcript, ocrText);
-        var (key, baseUrl, model) = GetPrimaryConfig();
-        return await ChatAsync(key, baseUrl, model, NoteSystemPrompt, user);
+        return await ChatWithFallbackAsync(NoteSystemPrompt, user);
     }
 
     public async Task<object?> GenerateMindmapAsync(string course, string transcript, IProgress<string>? progress = null)
@@ -47,8 +46,7 @@ public sealed class LlmService : ILlmService
         sb.AppendLine("{ \"name\": \"主题\", \"children\": [ { \"name\": \"子主题\", \"children\": [] } ] }");
         var user = sb.ToString();
 
-        var (key, baseUrl, model) = GetPrimaryConfig();
-        var json = await ChatAsync(key, baseUrl, model, MindmapSystemPrompt, user);
+        var json = await ChatWithFallbackAsync(MindmapSystemPrompt, user);
 
         json = ExtractJson(json);
         try
@@ -65,6 +63,45 @@ public sealed class LlmService : ILlmService
     {
         var s = AppSettings.Instance.Snapshot();
         return (s.LlmApiKey, s.LlmBaseUrl, s.LlmModel);
+    }
+
+    /// <summary>
+    /// 备用配置（可选）：仅当备用 Key 与备用地址都非空时才生效；模型沿用主配置。
+    /// </summary>
+    private (string? Key, string? BaseUrl, string Model) GetFallbackConfig()
+    {
+        var s = AppSettings.Instance.Snapshot();
+        return (string.IsNullOrWhiteSpace(s.LlmFallbackApiKey) ? null : s.LlmFallbackApiKey,
+                string.IsNullOrWhiteSpace(s.LlmFallbackBaseUrl) ? null : s.LlmFallbackBaseUrl,
+                s.LlmModel);
+    }
+
+    /// <summary>
+    /// 先走主配置；主配置失败（ChatAsync 内部已按 429/5xx/网络异常重试后仍失败）时，
+    /// 若配置了备用 Key/地址则再尝试一次，仍失败则抛出主配置错误（更贴近根因）。
+    /// </summary>
+    private async Task<string> ChatWithFallbackAsync(string system, string user)
+    {
+        var (key, baseUrl, model) = GetPrimaryConfig();
+        try
+        {
+            return await ChatAsync(key, baseUrl, model, system, user);
+        }
+        catch (Exception primaryEx)
+        {
+            var (fbKey, fbBaseUrl, fbModel) = GetFallbackConfig();
+            if (fbKey == null || fbBaseUrl == null)
+                throw; // 无备用配置
+
+            try
+            {
+                return await ChatAsync(fbKey, fbBaseUrl, fbModel, system, user);
+            }
+            catch
+            {
+                throw primaryEx;
+            }
+        }
     }
 
     private async Task<string> ChatAsync(string apiKey, string baseUrl, string model,

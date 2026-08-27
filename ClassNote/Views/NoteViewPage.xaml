@@ -37,6 +37,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
                 <Button Grid.Column="0"
@@ -66,6 +67,18 @@
                         FontSize="12"
                         BorderThickness="0" Cursor="Hand"
                         Click="ExportPdfButton_Click" />
+
+                <Button Grid.Column="3"
+                        x:Name="DeleteButton"
+                        Content="删除"
+                        Width="64" Height="28"
+                        Margin="12,0,0,0"
+                        Padding="0"
+                        VerticalAlignment="Center"
+                        Background="#D32F2F" Foreground="White"
+                        FontSize="12"
+                        BorderThickness="0" Cursor="Hand"
+                        Click="DeleteButton_Click" />
             </Grid>
         </Border>
 

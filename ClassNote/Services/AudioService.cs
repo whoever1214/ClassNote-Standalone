@@ -8,7 +8,6 @@ public class AudioService : IAudioService
     private WaveInEvent? _recorder;
     private WaveFileWriter? _writer;
     private string? _outputPath;
-    private bool _isRecording;
 
     public event EventHandler<byte[]>? AudioDataAvailable;
 
@@ -32,7 +31,6 @@ public class AudioService : IAudioService
                 AudioDataAvailable?.Invoke(this, e.Buffer);
             };
             _recorder.StartRecording();
-            _isRecording = true;
             return true;
         }
         catch { return false; }
@@ -48,7 +46,6 @@ public class AudioService : IAudioService
         }
         _writer?.Dispose();
         _writer = null;
-        _isRecording = false;
     }
 
     public byte[] GetFileBytes() => _outputPath != null ? File.ReadAllBytes(_outputPath) : Array.Empty<byte>();

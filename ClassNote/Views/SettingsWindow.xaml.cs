@@ -17,6 +17,8 @@ public partial class SettingsWindow : Window
         ApiKeyBox.Text = s.LlmApiKey;
         BaseUrlBox.Text = s.LlmBaseUrl;
         ModelBox.Text = s.LlmModel;
+        FallbackApiKeyBox.Text = s.LlmFallbackApiKey;
+        FallbackBaseUrlBox.Text = s.LlmFallbackBaseUrl;
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -26,6 +28,8 @@ public partial class SettingsWindow : Window
             s.LlmApiKey = ApiKeyBox.Text.Trim();
             s.LlmBaseUrl = BaseUrlBox.Text.Trim();
             s.LlmModel = ModelBox.Text.Trim();
+            s.LlmFallbackApiKey = FallbackApiKeyBox.Text.Trim();
+            s.LlmFallbackBaseUrl = FallbackBaseUrlBox.Text.Trim();
         });
         DialogResult = true;
     }

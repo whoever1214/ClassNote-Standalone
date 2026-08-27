@@ -80,6 +80,12 @@ public class NoteViewModel : BaseViewModel
         }
     }
 
+    /// <summary>删除当前会话（含录音、截图、笔记）。</summary>
+    public async Task DeleteSessionAsync(Guid sessionId)
+    {
+        await _api.DeleteSessionAsync(sessionId);
+    }
+
     /// <summary>Wraps rendered markdown body into a full HTML document with MathJax + readable styling.</summary>
     private static string BuildDocument(string bodyHtml)
     {

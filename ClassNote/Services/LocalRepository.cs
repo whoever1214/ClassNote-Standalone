@@ -344,6 +344,55 @@ public sealed class LocalRepository : IDisposable
         return note;
     }
 
+    /// <summary>
+    /// 删除一个会话及其全部关联数据：截图行与图片文件、笔记行、音频文件、会话行。
+    /// 幂等：会话不存在时静默返回。
+    /// </summary>
+    public void DeleteSession(Guid id)
+    {
+        var sid = id.ToString();
+
+        // 1. 音频文件
+        string? audioPath = null;
+        {
+            using var db = NewConnection();
+            db.Open();
+            using var cmd = new SQLiteCommand("SELECT audio_path FROM sessions WHERE id = @s", db);
+            cmd.Parameters.AddWithValue("@s", sid);
+            audioPath = cmd.ExecuteScalar() as string;
+        }
+
+        // 2. 截图图片文件（目录形式 %LOCALAPPDATA%/ClassNote/screenshots/{id}）
+        try
+        {
+            var shotsDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ClassNote", "screenshots", sid);
+            if (Directory.Exists(shotsDir))
+                Directory.Delete(shotsDir, recursive: true);
+        }
+        catch { /* 删除失败不阻断库记录删除 */ }
+
+        // 3. 音频文件
+        if (!string.IsNullOrWhiteSpace(audioPath))
+        {
+            try { if (File.Exists(audioPath)) File.Delete(audioPath); } catch { }
+        }
+
+        // 4. 库记录（截图/笔记/会话）
+        lock (_writeLock)
+        {
+            using var db = NewConnection();
+            db.Open();
+            using (var cmd = new SQLiteCommand("DELETE FROM screenshots WHERE session_id = @s", db))
+            { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
+            using (var cmd = new SQLiteCommand("DELETE FROM notes WHERE session_id = @s", db))
+            { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
+            using (var cmd = new SQLiteCommand("DELETE FROM sessions WHERE id = @s", db))
+            { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
+        }
+    }
+
     public void Dispose()
     {
         // 连接按需创建并释放，无长生命周期资源

@@ -42,6 +42,12 @@ public class ApiService : IApiService
         return Task.CompletedTask;
     }
 
+    public Task DeleteSessionAsync(Guid id)
+    {
+        _repo.DeleteSession(id);
+        return Task.CompletedTask;
+    }
+
     public Task UploadScreenshotAsync(Guid sessionId, int seqNo, double timestamp,
         string type, byte[] imageData, string? url)
     {

@@ -12,6 +12,9 @@ public interface IApiService
     Task<List<Session>> ListSessionsAsync();
     Task<Session> GetSessionAsync(Guid id);
     Task EndSessionAsync(Guid id, int durationSeconds);
+
+    /// <summary>删除一个会话及其全部关联数据（本地）。</summary>
+    Task DeleteSessionAsync(Guid id);
     Task UploadScreenshotAsync(Guid sessionId, int seqNo, double timestamp, string type, byte[] imageData, string? url);
     Task<AudioUploadInitResult> InitAudioUploadAsync(Guid sessionId, int fileSize, string filename);
     Task UploadAudioPartAsync(string uploadId, int partNumber, byte[] data);

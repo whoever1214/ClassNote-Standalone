@@ -60,6 +60,36 @@ public partial class NoteViewPage : Page
         BackRequested?.Invoke(this, EventArgs.Empty);
     }
 
+    private async void DeleteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sessionId is not Guid sid)
+            return;
+
+        var confirm = MessageBox.Show(
+            "确认删除这条课堂记录？删除后其录音、截图与笔记将一并永久移除，且无法恢复。",
+            "删除会话",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.OK)
+            return;
+
+        DeleteButton.IsEnabled = false;
+        try
+        {
+            await _viewModel.DeleteSessionAsync(sid);
+            BackRequested?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"删除失败：{ex.Message}",
+                "删除失败",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            DeleteButton.IsEnabled = true;
+        }
+    }
+
     private async void ExportPdfButton_Click(object sender, RoutedEventArgs e)
     {
         if (_sessionId is not Guid sid)
