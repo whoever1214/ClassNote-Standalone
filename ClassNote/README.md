@@ -29,7 +29,8 @@ dotnet build -c Release
   - `NoteProcessor.cs` — STT → OCR → LLM 编排管线
   - `LocalRepository.cs` — SQLite 数据存储
   - `PdfExportService.cs` — 本地 PDF 导出（QuestPDF）
-- `ViewModels/` — Main / Recording / Note 视图模型
+- `Controls/` — `SmoothScroll.cs` 全局平滑滚轮（缓动动画、视口比例步长、Shift 横向滚动）
+- `ViewModels/` — Main / Recording / Note 视图模型（MainViewModel 含最近记录多选/全选/批量导出/删除）
 - `Views/` — 页面（MainPage / RecordingPage / NoteViewPage / SettingsWindow / RecordingSetupWindow）
 - `Models/` — 数据模型 + `sensevoice/` 模型文件（model_quant.onnx / tokens.json / am.mvn）
 
