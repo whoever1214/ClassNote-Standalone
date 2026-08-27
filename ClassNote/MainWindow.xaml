@@ -3,7 +3,25 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ClassNote - 课堂笔记助手"
         Icon="/ClassNote;component/app.ico"
-        Height="600" Width="900"
-        WindowStartupLocation="CenterScreen">
+        Height="680" Width="1040"
+        MinHeight="560" MinWidth="880"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource BgBrush}"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True"
+        Opacity="0">
+    <Window.Triggers>
+        <EventTrigger RoutedEvent="Window.Loaded">
+            <BeginStoryboard>
+                <Storyboard>
+                    <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.22">
+                        <DoubleAnimation.EasingFunction>
+                            <QuadraticEase EasingMode="EaseOut" />
+                        </DoubleAnimation.EasingFunction>
+                    </DoubleAnimation>
+                </Storyboard>
+            </BeginStoryboard>
+        </EventTrigger>
+    </Window.Triggers>
     <Frame x:Name="MainFrame" NavigationUIVisibility="Hidden" />
 </Window>

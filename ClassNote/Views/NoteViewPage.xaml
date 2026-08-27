@@ -5,7 +5,7 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
       mc:Ignorable="d"
-      d:DesignHeight="600" d:DesignWidth="900"
+      d:DesignHeight="680" d:DesignWidth="1040"
       Title="ClassNote - 笔记查看">
 
     <Page.Resources>
@@ -20,18 +20,19 @@
 
         <!-- 加载中遮罩层 -->
         <Grid Grid.RowSpan="2" Panel.ZIndex="100"
-              Background="#80FFFFFF"
+              Background="#A6F6F7FB"
               Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ProgressBar Style="{StaticResource LoadingSpinner}" HorizontalAlignment="Center" />
-                <TextBlock Text="加载中..." FontSize="13" Foreground="#666"
+                <TextBlock Text="加载中..." FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
                            HorizontalAlignment="Center" Margin="0,10,0,0" />
             </StackPanel>
         </Grid>
 
-        <!-- 顶部工具栏：返回按钮 + 标题 + 导出 PDF -->
-        <Border Grid.Row="0" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
-                Padding="16,10" Background="#FAFAFA">
+        <!-- 顶部工具栏 -->
+        <Border Grid.Row="0" Background="#FFFFFF"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="16,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -40,61 +41,49 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0"
-                        Content="← 返回"
-                        Width="72" Height="28"
-                        Padding="0"
-                        VerticalAlignment="Center"
-                        Background="#1976D2" Foreground="White"
-                        FontSize="12"
-                        BorderThickness="0" Cursor="Hand"
-                        Click="BackButton_Click" />
+                <Button Grid.Column="0" Style="{StaticResource GhostButtonStyle}" Width="78"
+                        VerticalAlignment="Center" Click="BackButton_Click" ToolTip="返回主页">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE72B;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="返回" FontSize="12" />
+                    </StackPanel>
+                </Button>
 
-                <TextBlock Grid.Column="1"
-                           Text="{Binding Note.Title}"
-                           FontSize="18" FontWeight="Bold"
-                           VerticalAlignment="Center"
-                           Margin="16,0,16,0"
-                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{Binding Note.Title}"
+                           FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                           Margin="16,0,16,0" TextTrimming="CharacterEllipsis" />
 
-                <Button Grid.Column="2"
-                        x:Name="ExportPdfButton"
-                        Content="导出 PDF"
-                        Width="88" Height="28"
-                        Padding="0"
-                        VerticalAlignment="Center"
-                        Background="#1976D2" Foreground="White"
-                        FontSize="12"
-                        BorderThickness="0" Cursor="Hand"
-                        Click="ExportPdfButton_Click" />
+                <Button Grid.Column="2" x:Name="ExportPdfButton" Style="{StaticResource PrimaryButtonStyle}"
+                        Height="34" VerticalAlignment="Center" Click="ExportPdfButton_Click"
+                        ToolTip="导出为 PDF 保存到桌面">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE792;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="导出 PDF" FontSize="12" />
+                    </StackPanel>
+                </Button>
 
-                <Button Grid.Column="3"
-                        x:Name="DeleteButton"
-                        Content="删除"
-                        Width="64" Height="28"
-                        Margin="12,0,0,0"
-                        Padding="0"
-                        VerticalAlignment="Center"
-                        Background="#D32F2F" Foreground="White"
-                        FontSize="12"
-                        BorderThickness="0" Cursor="Hand"
-                        Click="DeleteButton_Click" />
+                <Button Grid.Column="3" x:Name="DeleteButton" Style="{StaticResource DangerGhostButtonStyle}"
+                        Width="74" Margin="10,0,0,0" VerticalAlignment="Center"
+                        Click="DeleteButton_Click" ToolTip="删除这条课堂记录">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                   Margin="0,0,6,0" VerticalAlignment="Center" />
+                        <TextBlock Text="删除" FontSize="12" />
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
-        <!-- 主体：单一笔记 Markdown 正文 -->
-        <Border Grid.Row="1" Margin="12"
-                BorderBrush="#E0E0E0" BorderThickness="1"
-                CornerRadius="6"
-                Background="White">
-            <wv2:WebView2 x:Name="MarkdownBrowser" />
-        </Border>
+        <!-- 主体：WebView2 笔记渲染 -->
+        <wv2:WebView2 Grid.Row="1" x:Name="MarkdownBrowser" />
 
         <!-- 加载失败提示 -->
-        <TextBlock Grid.Row="1"
-                   Text="{Binding ErrorMessage}"
+        <TextBlock Grid.Row="1" Text="{Binding ErrorMessage}"
                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
                    HorizontalAlignment="Center" VerticalAlignment="Center"
-                   Foreground="#D32F2F" FontSize="14" TextWrapping="Wrap" MaxWidth="480" />
+                   Foreground="{StaticResource DangerBrush}" FontSize="14"
+                   TextWrapping="Wrap" MaxWidth="480" Margin="0,0,0,120" />
     </Grid>
 </Page>

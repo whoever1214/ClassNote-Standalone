@@ -12,6 +12,7 @@
 - **LLM 笔记生成**：调用 OpenAI 兼容 API（默认 DeepSeek），把"转写 + 截图文字"整理为 Markdown 笔记。
 - **PDF 导出**：笔记本地渲染为 PDF（QuestPDF），保存到桌面。
 - **数据本地化**：会话 / 截图 / 笔记全部存于本机 SQLite（%LOCALAPPDATA%/ClassNote/classnote.db）。
+- **现代界面**：「云白 + 靛蓝」轻量主题，圆角卡片布局、渐变按钮、状态胶囊列表、录音呼吸指示、页面切换动效（样式体系集中于 `ClassNote/App.xaml`）。
 
 ## 文档导航
 
@@ -27,7 +28,7 @@
 
 1. 进入 `ClassNote/bin/Release/net8.0-windows10.0.19041.0/`。
 2. 确保该目录下存在 `models/sensevoice/`（model_quant.onnx / tokens.json / am.mvn）。
-3. 双击 `ClassNote.exe` 启动，主页面左下角「设置」配置 LLM API Key 后即可使用完整功能。
+3. 双击 `ClassNote.exe` 启动，点击主页面右上角「设置」图标（齿轮）配置 LLM API Key 后即可使用完整功能。
 
 ### 从源码构建
 

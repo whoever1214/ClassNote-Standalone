@@ -4,77 +4,154 @@
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       mc:Ignorable="d"
-      d:DesignHeight="600" d:DesignWidth="900"
+      d:DesignHeight="680" d:DesignWidth="1040"
       Title="ClassNote - 录音记录"
       Loaded="Page_Loaded" Unloaded="Page_Unloaded">
 
+    <Page.Resources>
+        <!-- 录音指示光环：仅在"录音中"时持续呼吸脉动 -->
+        <Style x:Key="HaloStyle" TargetType="Ellipse">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="26" />
+            <Setter Property="Fill" Value="#33E5484D" />
+            <Setter Property="Opacity" Value="0" />
+            <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <ScaleTransform ScaleX="0.6" ScaleY="0.6" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusText}" Value="录音中">
+                    <Setter Property="Opacity" Value="1" />
+                    <Setter Property="IsHitTestVisible" Value="False" />
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard x:Name="HaloSB">
+                            <Storyboard RepeatBehavior="Forever">
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)"
+                                                 From="0.6" To="1.75" Duration="0:0:1.7">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)"
+                                                 From="0.6" To="1.75" Duration="0:0:1.7">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.9" To="0" Duration="0:0:1.7">
+                                    <DoubleAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </DoubleAnimation.EasingFunction>
+                                </DoubleAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                    <DataTrigger.ExitActions>
+                        <StopStoryboard BeginStoryboardName="HaloSB" />
+                    </DataTrigger.ExitActions>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Page.Resources>
+
     <Grid>
-        <Border Width="480" VerticalAlignment="Center" HorizontalAlignment="Center"
-                BorderBrush="#E0E0E0" BorderThickness="1"
-                CornerRadius="8" Padding="24"
-                Background="White">
-            <StackPanel>
-                <!-- Status Indicator -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,8">
-                    <Ellipse x:Name="RecordingDot" Width="12" Height="12"
-                             Fill="#4CAF50" VerticalAlignment="Center"
-                             Margin="0,0,8,0" />
-                    <TextBlock x:Name="StatusLabel"
-                               Text="{Binding StatusText}"
-                               FontSize="16" FontWeight="SemiBold"
-                               VerticalAlignment="Center" />
-                </StackPanel>
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#F7F8FC" Offset="0" />
+                <GradientStop Color="#EDF0F8" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
 
-                <!-- Recording Duration (large timer) -->
-                <TextBlock Text="{Binding ElapsedDisplay}"
-                           FontSize="48" FontWeight="Bold"
-                           HorizontalAlignment="Center"
-                           Margin="0,8,0,16"
-                           Foreground="#333" />
-
-                <!-- Stats Row: Screenshot Count + Video URLs Found -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
-                    <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
-                        <TextBlock Text="截图: " FontSize="14" Foreground="#666" />
-                        <TextBlock Text="{Binding ScreenshotCount}" FontSize="14" FontWeight="Bold" Foreground="#1976D2" />
-                    </StackPanel>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="课程: " FontSize="14" Foreground="#666" />
-                        <TextBlock x:Name="CourseLabel" FontSize="14" FontWeight="Bold" Foreground="#1976D2" />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Separator -->
-                <Rectangle Height="1" Fill="#E0E0E0" Margin="0,0,0,16" />
-
-                <!-- Upload Progress (indeterminate while recording) -->
-                <ProgressBar Height="6" Margin="0,0,0,4"
-                             IsIndeterminate="True"
-                             Foreground="#1976D2"
-                             x:Name="UploadProgressBar" />
-
-                <TextBlock Text="正在上传截图..."
-                           FontSize="11" Foreground="#999"
-                           HorizontalAlignment="Center"
-                           Margin="0,0,0,16"
-                           x:Name="UploadStatusText" />
-
-                <!-- Microphone Selector -->
-                <TextBlock Text="麦克风" FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-                <ComboBox ItemsSource="{Binding AvailableMics}"
-                          SelectedItem="{Binding SelectedMic, UpdateSourceTrigger=PropertyChanged}"
-                          Height="34"
-                          Margin="0,0,0,20"
-                          BorderBrush="#CCC" />
-
-                <!-- End Recording Button -->
-                <Button x:Name="EndButton"
-                        Content="结束录音"
-                        Height="44"
-                        Background="#D32F2F" Foreground="White"
-                        FontSize="14" FontWeight="SemiBold"
-                        Click="EndButton_Click" />
+        <!-- 显示课程名的角标（页面右上角） -->
+        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,18,22,0"
+                Background="#33FFFFFF" CornerRadius="10" Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="课程：" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                <TextBlock x:Name="CourseLabel" FontSize="12" FontWeight="Bold"
+                           Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
             </StackPanel>
+        </Border>
+
+        <Border Width="540" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Style="{StaticResource CardBorderStyle}">
+            <Grid Margin="36,34">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- 状态指示 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center">
+                    <Grid Width="26" Height="26" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <Ellipse x:Name="Halo" Style="{StaticResource HaloStyle}" />
+                        <Ellipse x:Name="RecordingDot" Width="12" Height="12" Fill="#E5484D"
+                                 VerticalAlignment="Center" HorizontalAlignment="Center" />
+                    </Grid>
+                    <TextBlock x:Name="StatusLabel" Text="{Binding StatusText}"
+                               FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- 大计时器 -->
+                <TextBlock Grid.Row="1" Text="{Binding ElapsedDisplay}"
+                           FontFamily="Consolas" FontSize="56" FontWeight="Regular"
+                           HorizontalAlignment="Center" Margin="0,16,0,4"
+                           Foreground="#262B33" />
+
+                <!-- 统计信息 -->
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,2,0,26">
+                    <Border Background="#F4F5F8" CornerRadius="10" Padding="14,7" Margin="0,0,10,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                       Foreground="{StaticResource PrimaryBrush}" Margin="0,0,7,0"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="截图" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding ScreenshotCount}" FontSize="13" FontWeight="Bold"
+                                       Foreground="{StaticResource PrimaryBrush}" Margin="6,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#F4F5F8" CornerRadius="10" Padding="14,7">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="7" Height="7" Fill="{StaticResource SuccessBrush}"
+                                     Margin="0,0,7,0" VerticalAlignment="Center" />
+                            <TextBlock Text="每 10 秒自动截屏" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- 分隔线 -->
+                <Rectangle Grid.Row="3" Height="1" Fill="{StaticResource BorderBrush}" Margin="0,0,0,20" />
+
+                <!-- 保存进度 -->
+                <StackPanel Grid.Row="4" Margin="0,0,0,22">
+                    <ProgressBar x:Name="UploadProgressBar" Height="6" IsIndeterminate="True"
+                                 Foreground="{StaticResource PrimaryBrush}" />
+                    <TextBlock x:Name="UploadStatusText" Text="正在自动保存截图与录音…"
+                               FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                               HorizontalAlignment="Center" Margin="0,9,0,0" />
+                </StackPanel>
+
+                <!-- 麦克风选择 -->
+                <StackPanel Grid.Row="5" Margin="0,0,0,22">
+                    <TextBlock Text="麦克风" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,6" />
+                    <ComboBox ItemsSource="{Binding AvailableMics}"
+                              SelectedItem="{Binding SelectedMic, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+
+                <!-- 结束录音 -->
+                <Button Grid.Row="6" x:Name="EndButton" Style="{StaticResource DangerButtonStyle}"
+                        Height="46" Click="EndButton_Click" Content="结束录音" ToolTip="停止录音并快速回到主页" />
+            </Grid>
         </Border>
     </Grid>
 </Page>

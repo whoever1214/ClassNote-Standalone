@@ -36,8 +36,9 @@ public partial class RecordingPage : Page
         DataContext = _viewModel;
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        // 平滑呼吸闪烁：透明度在 1 ↔ 0.22 之间切换（替代原先生硬的红↔透明切换）
         _uiTimer.Tick += (_, _) =>
-            RecordingDot.Fill = RecordingDot.Fill == Brushes.Red ? Brushes.Transparent : Brushes.Red;
+            RecordingDot.Opacity = RecordingDot.Opacity >= 0.99 ? 0.22 : 1.0;
     }
 
     private async void Page_Loaded(object sender, RoutedEventArgs e)
@@ -66,6 +67,7 @@ public partial class RecordingPage : Page
 
         _uiTimer.Stop();
         RecordingDot.Fill = Brushes.Gray;
+        RecordingDot.Opacity = 1.0;
         UploadProgressBar.Visibility = Visibility.Collapsed;
         UploadStatusText.Visibility = Visibility.Collapsed;
 

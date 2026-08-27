@@ -5,7 +5,7 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       xmlns:converters="clr-namespace:ClassNote.Converters"
       mc:Ignorable="d"
-      d:DesignHeight="600" d:DesignWidth="900"
+      d:DesignHeight="680" d:DesignWidth="1040"
       Title="ClassNote - 课堂笔记助手">
 
     <Page.Resources>
@@ -14,109 +14,178 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </Page.Resources>
 
-    <Grid Margin="20">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="220" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-
+    <Grid>
         <!-- 加载中遮罩层 -->
-        <Grid Grid.ColumnSpan="2"
-              Panel.ZIndex="100"
-              Background="#80FFFFFF"
+        <Grid Panel.ZIndex="100"
+              Background="#80F2F3F7"
               Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ProgressBar Style="{StaticResource LoadingSpinner}" HorizontalAlignment="Center" />
-                <TextBlock Text="加载中..." FontSize="13" Foreground="#666"
+                <TextBlock Text="加载中..." FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
                            HorizontalAlignment="Center" Margin="0,10,0,0" />
             </StackPanel>
         </Grid>
 
-        <!-- Left: Course Selection -->
-        <Border Grid.Column="0"
-                BorderBrush="#E0E0E0" BorderThickness="1"
-                CornerRadius="8" Padding="16">
-            <StackPanel>
-                <TextBlock Text="选择课程"
-                           FontSize="18" FontWeight="Bold"
-                           Margin="0,0,0,12" />
-
-                <ListBox ItemsSource="{Binding Courses}"
-                         SelectedItem="{Binding SelectedCourse}"
-                         Height="300"
-                         BorderBrush="#E0E0E0" BorderThickness="1" />
-
-                <Button Content="开始记录"
-                        Height="44" Margin="0,16,0,0"
-                        Background="#1976D2" Foreground="White"
-                        FontSize="14" FontWeight="SemiBold"
-                        Click="StartButton_Click" />
-
-                <Button Content="设置（LLM API Key）"
-                        Height="36" Margin="0,8,0,0"
-                        Background="#EEE" Foreground="#333"
-                        FontSize="13"
-                        Click="SettingsButton_Click" />
-
-                <TextBlock Text="{Binding ErrorMessage}"
-                           Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0"
-                           Foreground="#D32F2F" FontSize="12"
-                           TextWrapping="Wrap" />
-            </StackPanel>
-        </Border>
-
-        <!-- Right: Recent Sessions -->
-        <Border Grid.Column="1" Margin="20,0,0,0"
-                BorderBrush="#E0E0E0" BorderThickness="1"
-                CornerRadius="8" Padding="16">
-            <StackPanel>
-                <DockPanel Margin="0,0,0,12">
-                    <TextBlock Text="最近记录"
-                               FontSize="18" FontWeight="Bold"
-                               DockPanel.Dock="Left" />
-                    <Button Content="刷新"
-                            Command="{Binding RefreshCommand}"
-                            DockPanel.Dock="Right"
-                            Width="64" Height="28"
-                            Padding="0"
-                            VerticalAlignment="Center"
-                            Background="#1976D2" Foreground="White"
-                            FontSize="12"
-                            BorderThickness="0" Cursor="Hand" />
+        <DockPanel Margin="26,20,26,26">
+            <!-- 顶部品牌栏 -->
+            <Border DockPanel.Dock="Top" Margin="2,0,2,18">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                        <Border Width="42" Height="42" CornerRadius="12"
+                                Background="{StaticResource PrimaryGradientBrush}" VerticalAlignment="Center">
+                            <TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="18"
+                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="ClassNote" FontSize="20" FontWeight="Bold" />
+                            <TextBlock Text="课堂笔记助手 · 录音 / 截屏 / AI 笔记"
+                                       FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="刷新列表"
+                                Command="{Binding RefreshCommand}">
+                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
+                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="设置（LLM API 配置）"
+                                Click="SettingsButton_Click" Margin="8,0,0,0">
+                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
+                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+                    </StackPanel>
                 </DockPanel>
+            </Border>
 
-                <ListView ItemsSource="{Binding RecentSessions}"
-                          MouseDoubleClick="SessionList_MouseDoubleClick">
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="课程" Width="60"
-                                            DisplayMemberBinding="{Binding Course}" />
-                            <GridViewColumn Header="标题" Width="180"
-                                            DisplayMemberBinding="{Binding Title}" />
-                            <GridViewColumn Header="时间" Width="130">
-                                <GridViewColumn.CellTemplate>
+            <!-- 主体两栏 -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="262" />
+                    <ColumnDefinition Width="20" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：课程选择 -->
+                <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="0,0,0,14">
+                            <TextBlock Text="选择课程" FontSize="16" FontWeight="Bold" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                            <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
+                                    Padding="9,2" DockPanel.Dock="Right" VerticalAlignment="Center">
+                                <TextBlock Text="9 门课程" FontSize="11" Foreground="{StaticResource PrimaryDarkBrush}" />
+                            </Border>
+                        </DockPanel>
+
+                        <ListBox Grid.Row="1"
+                                 ItemsSource="{Binding Courses}"
+                                 SelectedItem="{Binding SelectedCourse}"
+                                 BorderThickness="0" Background="Transparent" />
+
+                        <StackPanel Grid.Row="2">
+                            <Button Style="{StaticResource PrimaryButtonStyle}" Height="46" Margin="0,4,0,0"
+                                    Click="StartButton_Click" ToolTip="开始录音与自动截屏">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="16"
+                                               Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="开始记录" FontSize="14" />
+                                </StackPanel>
+                            </Button>
+                            <TextBlock Text="录音开始后将自动截屏并生成 AI 笔记" FontSize="11"
+                                       Foreground="{StaticResource TextHintBrush}" HorizontalAlignment="Center"
+                                       Margin="0,10,0,0" />
+                            <Border Background="{StaticResource DangerLightBrush}" CornerRadius="8"
+                                    Padding="10,8" Margin="0,10,0,0"
+                                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
+                                           FontSize="12" TextWrapping="Wrap" TextAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 右：最近记录 -->
+                <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                            <TextBlock Text="最近记录" FontSize="16" FontWeight="Bold" DockPanel.Dock="Left" />
+                            <TextBlock DockPanel.Dock="Right" Text="双击记录可查看笔记" FontSize="11"
+                                       Foreground="{StaticResource TextHintBrush}" VerticalAlignment="Center" />
+                        </DockPanel>
+
+                        <Grid Grid.Row="1">
+                            <ListView ItemsSource="{Binding RecentSessions}"
+                                      MouseDoubleClick="SessionList_MouseDoubleClick"
+                                      BorderThickness="0" Background="Transparent">
+                                <ListView.ItemTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding StartTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="104" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="148" />
+                                                <ColumnDefinition Width="112" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Border Grid.Column="0" Background="{StaticResource HoverBrush}" CornerRadius="6"
+                                                    Padding="9,3" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding Course}" FontSize="12"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Border>
+
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                       Margin="0,0,8,0" />
+
+                                            <TextBlock Grid.Column="2" Text="{Binding StartTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                       FontSize="12" Foreground="{StaticResource TextHintBrush}"
+                                                       VerticalAlignment="Center" />
+
+                                            <Border Grid.Column="3" Background="#F4F5F8" CornerRadius="12" Padding="11,3"
+                                                    VerticalAlignment="Center" HorizontalAlignment="Left">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="8" Height="8"
+                                                             Fill="{Binding Status, Converter={StaticResource StatusColorConverter}}"
+                                                             VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                    <TextBlock Text="{Binding Status, Converter={StaticResource StatusDisplayConverter}}"
+                                                               FontSize="12" VerticalAlignment="Center"
+                                                               Foreground="{Binding Status, Converter={StaticResource StatusColorConverter}}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </Grid>
                                     </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="状态" Width="90">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="8" Height="8"
-                                                     Fill="{Binding Status, Converter={StaticResource StatusColorConverter}}"
-                                                     VerticalAlignment="Center" Margin="0,0,4,0" />
-                                            <TextBlock Text="{Binding Status, Converter={StaticResource StatusDisplayConverter}}" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </StackPanel>
-        </Border>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <!-- 空状态 -->
+                            <TextBlock Text="暂无课堂记录，点击「开始记录」创建第一条"
+                                       FontSize="12" Foreground="{StaticResource TextHintBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding RecentSessions.Count}" Value="0">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </DockPanel>
     </Grid>
 </Page>

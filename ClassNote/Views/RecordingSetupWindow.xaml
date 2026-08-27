@@ -2,13 +2,17 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="开始记录 - 配置"
-        Height="360" Width="420"
+        Height="424" Width="440"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        WindowStyle="SingleBorderWindow">
-    <Grid Margin="24">
+        WindowStyle="SingleBorderWindow"
+        Background="{StaticResource BgBrush}"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True">
+    <Grid Margin="26,22,26,24">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -18,39 +22,32 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="课程"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <ComboBox Grid.Row="1" x:Name="CourseCombo"
-                  Height="34" Margin="0,0,0,16"
-                  BorderBrush="#CCC" />
-
-        <TextBlock Grid.Row="2" Text="标题（可选）"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <TextBox Grid.Row="3" x:Name="TitleBox"
-                 Height="34" Margin="0,0,0,16"
-                 BorderBrush="#CCC"
-                 VerticalContentAlignment="Center"
-                 MaxLength="128" />
-
-        <TextBlock Grid.Row="4" Text="麦克风"
-                   FontSize="13" Foreground="#555" Margin="0,0,0,4" />
-        <StackPanel Grid.Row="5" VerticalAlignment="Top">
-            <ComboBox x:Name="MicCombo"
-                      Height="34" Margin="0,0,0,4"
-                      BorderBrush="#CCC" />
-            <TextBlock x:Name="MicHint"
-                       FontSize="11" Foreground="#999"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,16" />
+        <StackPanel Grid.Row="0" Margin="0,0,0,18">
+            <TextBlock Text="开始一段新的课堂记录" FontSize="17" FontWeight="Bold" Margin="0,0,0,4" />
+            <TextBlock Text="确认课程、填写标题并选择麦克风。" FontSize="12"
+                       Foreground="{StaticResource TextSecondaryBrush}" />
         </StackPanel>
 
-        <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="取消" Width="90" Height="36"
-                    Margin="0,0,12,0"
-                    Background="#EEE" Foreground="#333"
-                    Click="CancelButton_Click" />
-            <Button Content="开始录制" Width="110" Height="36"
-                    Background="#1976D2" Foreground="White" FontWeight="SemiBold"
+        <TextBlock Grid.Row="1" Text="课程" FontSize="12"
+                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+        <ComboBox Grid.Row="2" x:Name="CourseCombo" Margin="0,0,0,14" />
+
+        <TextBlock Grid.Row="3" Text="标题（可选）" FontSize="12"
+                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+        <TextBox Grid.Row="4" x:Name="TitleBox" Margin="0,0,0,14" MaxLength="128" />
+
+        <TextBlock Grid.Row="5" Text="麦克风" FontSize="12"
+                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+        <StackPanel Grid.Row="6" VerticalAlignment="Top">
+            <ComboBox x:Name="MicCombo" />
+            <TextBlock x:Name="MicHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                       TextWrapping="Wrap" Margin="2,6,0,0" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="7" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+            <Button Content="取消" Style="{StaticResource GhostButtonStyle}" Width="92" Height="36"
+                    Margin="0,0,12,0" Click="CancelButton_Click" />
+            <Button Content="开始录制" Style="{StaticResource PrimaryButtonStyle}" Width="112" Height="36"
                     Click="StartButton_Click" />
         </StackPanel>
     </Grid>
