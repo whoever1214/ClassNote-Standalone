@@ -10,7 +10,7 @@ namespace ClassNote.Controls;
 /// <summary>
 /// 全局滚轮手感优化：
 /// - 用带缓动的动画平滑滚动，替代 WPF 默认"一次跳 3 行"的生硬跳变；
-/// - 每次滚动的距离按当前视口大小比例计算（约 1/3 视口），小窗口不会滚太快，长列表也不会滚太慢；
+/// - 每次滚动的距离按当前视口大小比例计算（约 1/2 视口），小窗口不会滚太快，长列表也不会滚太慢；
 /// - 连续滚动时动画实时重定向，跟手不卡顿；滚轮落在不可滚动区域时自动交给外层容器；
 /// - Shift + 滚轮支持横向滚动（当存在横向滚动能力时）。
 /// 只需在启动时调用一次 <see cref="Enable"/>。
@@ -24,8 +24,8 @@ public static class SmoothScroll
 {
     private static readonly ConditionalWeakTable<ScrollViewer, ScrollState> States = new();
 
-    /// <summary>每次滚轮滚动约视口的 1/3。</summary>
-    private const double StepFactor = 1.0 / 3.0;
+    /// <summary>每次滚轮滚动约视口的 1/2（灵敏度：一格滚半屏）。</summary>
+    private const double StepFactor = 1.0 / 2.0;
 
     /// <summary>单次滚动动画时长；连续滚轮事件会不断重定向，不打断整体节奏。</summary>
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(380);
