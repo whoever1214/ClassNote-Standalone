@@ -124,9 +124,6 @@ public static class SmoothScroll
         private bool _vertical;
         private DateTime _start;
 
-        /// <summary>当前位置与动画预期位置偏离超过该值时，视为外部滚动（拖滚动条/键盘），中断动画。</summary>
-        private const double ExternalJumpThreshold = 24.0;
-
         public ScrollState(ScrollViewer viewer)
         {
             _viewer = viewer;
@@ -175,12 +172,14 @@ public static class SmoothScroll
                 value = _from + (_to - _from) * eased;
             }
 
-            // 逐帧以 ScrollViewer 实际偏移为基准校验：ScrollToVerticalOffset 的生效和
-            // ScrollChanged 事件是延迟到下一次布局才发生的，无法用它区分"本组件的滚动"
-            // 与"用户拖滚动条"，因此改为对比实际位置与动画预期位置。偏离过大说明存在
-            // 外部滚动（拖滚动条、键盘翻页、内容重排等），立即中断动画，以用户位置为准。
+            // 用“视口比例”的外部跳变阈值判断是否中断动画：ScrollToVerticalOffset 的生效是
+            // 延迟到下一次布局才发生的，UI 线程稍忙（轮询刷新、后台处理）时实际位置会暂时落后
+            // 动画预期值；若用固定小阈值，会把这种正常滞后误判为“外部滚动”而中断动画，表现为
+            // 滚动卡顿/停住。只有偏离超过 3/4 视口（用户拖滚动条、键盘翻页、内容被外部重排等）
+            // 才视为外部操作，立即中断并让位。
             var actual = _vertical ? _viewer.VerticalOffset : _viewer.HorizontalOffset;
-            if (Math.Abs(actual - value) > ExternalJumpThreshold)
+            var viewport = _vertical ? _viewer.ViewportHeight : _viewer.ViewportWidth;
+            if (Math.Abs(actual - value) > viewport * 0.75)
             {
                 _timer.Stop();
                 return;
