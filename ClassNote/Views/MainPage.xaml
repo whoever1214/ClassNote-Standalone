@@ -134,7 +134,7 @@
                                 <TextBlock Text="{Binding SelectedCount, StringFormat=已选 {0} 项}" FontSize="12"
                                            Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
                                            VerticalAlignment="Center" />
-                                <Button x:Name="ExportPdfButton" Style="{StaticResource GhostButtonStyle}" Height="32"
+                                <Button x:Name="ExportPdfButton" Style="{StaticResource PrimaryGhostButtonStyle}" Height="32"
                                         Content="批量导出 PDF" Click="ExportPdfButton_Click" Margin="14,0,0,0"
                                         IsEnabled="{Binding HasSelection}"
                                         ToolTip="将选中的课堂笔记导出为 PDF 文件（尚未生成笔记的记录将自动跳过）" />

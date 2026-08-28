@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace ClassNote.Controls;
 
@@ -14,6 +14,11 @@ namespace ClassNote.Controls;
 /// - 连续滚动时动画实时重定向，跟手不卡顿；滚轮落在不可滚动区域时自动交给外层容器；
 /// - Shift + 滚轮支持横向滚动（当存在横向滚动能力时）。
 /// 只需在启动时调用一次 <see cref="Enable"/>。
+///
+/// 实现说明：动画用 DispatcherTimer 逐帧（约 60fps）直接调用
+/// ScrollViewer.ScrollToVerticalOffset/ScrollToHorizontalOffset 驱动滚动，动画基准
+/// 始终读取 ScrollViewer 的实际偏移。不采用"动画化代理依赖属性"的方案——那种方案在
+/// 动画结束（FillBehavior.Stop）时属性会回落到基值，导致滚轮释放后列表自动弹回顶部。
 /// </summary>
 public static class SmoothScroll
 {
@@ -24,6 +29,9 @@ public static class SmoothScroll
 
     /// <summary>单次滚动动画时长；连续滚轮事件会不断重定向，不打断整体节奏。</summary>
     private static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(380);
+
+    /// <summary>动画帧间隔（约 60fps）。</summary>
+    private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(15);
 
     static SmoothScroll()
     {
@@ -54,19 +62,21 @@ public static class SmoothScroll
         if (sv == null || !ReferenceEquals(sv, sender))
             return;
 
-        var state = States.GetValue(sv, _ => new ScrollState(_));
+        var state = States.GetValue(sv, _ => new ScrollState(sv));
         var shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
+        // 方向约定：WPF 中滚轮向前（Delta>0）为向上/向左，向后（Delta<0）为向下/向右，
+        // 因此目标偏移 = 当前偏移 - Delta 折算的步长。
         if (shift && sv.ScrollableWidth > 0)
         {
             var step = Math.Max(sv.ViewportWidth * StepFactor, 1.0);
-            var target = Math.Clamp(state.HorizontalOffset + e.Delta / 120.0 * step, 0, sv.ScrollableWidth);
+            var target = Math.Clamp(sv.HorizontalOffset - e.Delta / 120.0 * step, 0, sv.ScrollableWidth);
             state.ScrollToHorizontal(target);
         }
         else if (sv.ScrollableHeight > 0)
         {
             var step = Math.Max(sv.ViewportHeight * StepFactor, 1.0);
-            var target = Math.Clamp(state.VerticalOffset + e.Delta / 120.0 * step, 0, sv.ScrollableHeight);
+            var target = Math.Clamp(sv.VerticalOffset - e.Delta / 120.0 * step, 0, sv.ScrollableHeight);
             state.ScrollToVertical(target);
         }
         else
@@ -99,139 +109,87 @@ public static class SmoothScroll
         return null;
     }
 
-    /// <summary>单个 ScrollViewer 的滚动状态：持有偏移量代理并负责启动/重定向动画。</summary>
+    /// <summary>
+    /// 单个 ScrollViewer 的滚动状态：持有逐帧动画定时器，直接驱动 ScrollViewer 偏移。
+    /// 每次滚轮事件从 ScrollViewer 的实际偏移重新起算并重定向动画；若检测到外部滚动
+    /// （拖滚动条、键盘翻页等），立即中断动画，以用户的实际位置为准。
+    /// </summary>
     private sealed class ScrollState
     {
-        private readonly ScrollViewerOffsetMediator _mediator = new();
+        private readonly ScrollViewer _viewer;
+        private readonly DispatcherTimer _timer;
+
+        private double _from;
+        private double _to;
+        private bool _vertical;
+        private DateTime _start;
+
+        /// <summary>当前位置与动画预期位置偏离超过该值时，视为外部滚动（拖滚动条/键盘），中断动画。</summary>
+        private const double ExternalJumpThreshold = 24.0;
 
         public ScrollState(ScrollViewer viewer)
         {
-            _mediator.ScrollViewer = viewer;
+            _viewer = viewer;
+            _timer = new DispatcherTimer { Interval = TickInterval };
+            _timer.Tick += OnTick;
         }
-
-        public double VerticalOffset => _mediator.VerticalOffset;
-        public double HorizontalOffset => _mediator.HorizontalOffset;
 
         public void ScrollToVertical(double target)
         {
-            var from = _mediator.VerticalOffset;
+            var from = _viewer.VerticalOffset;
             if (Math.Abs(target - from) < 0.5)
-                return;
-            _mediator.BeginAnimation(ScrollViewerOffsetMediator.VerticalOffsetProperty, NewAnimation(from, target));
+                return; // 已在目标位置（如滚动到边界），无需动画
+            BeginAnimation(from, target, vertical: true);
         }
 
         public void ScrollToHorizontal(double target)
         {
-            var from = _mediator.HorizontalOffset;
+            var from = _viewer.HorizontalOffset;
             if (Math.Abs(target - from) < 0.5)
                 return;
-            _mediator.BeginAnimation(ScrollViewerOffsetMediator.HorizontalOffsetProperty, NewAnimation(from, target));
+            BeginAnimation(from, target, vertical: false);
         }
 
-        private static DoubleAnimation NewAnimation(double from, double to) => new(from, to, Duration)
+        private void BeginAnimation(double from, double to, bool vertical)
         {
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
-            // 动画结束后立即释放，避免把滚动位置"钉"住，拖滚动条/键盘滚动不受影响
-            FillBehavior = FillBehavior.Stop,
-        };
-    }
-
-    /// <summary>
-    /// 可动画化的偏移量代理：ScrollViewer 的 VerticalOffset/HorizontalOffset 是只读依赖属性，
-    /// 无法直接动画化，这里用代理属性 + BeginAnimation 驱动 ScrollToVerticalOffset/ScrollToHorizontalOffset。
-    /// 同时监听 ScrollChanged，把外部滚动（拖滚动条、键盘、内容变化）同步回来，保证动画基准一致。
-    /// </summary>
-    private sealed class ScrollViewerOffsetMediator : Animatable
-    {
-        public static readonly DependencyProperty ScrollViewerProperty =
-            DependencyProperty.Register(nameof(ScrollViewer), typeof(ScrollViewer), typeof(ScrollViewerOffsetMediator),
-                new PropertyMetadata(null, OnScrollViewerChanged));
-
-        public static readonly DependencyProperty VerticalOffsetProperty =
-            DependencyProperty.Register(nameof(VerticalOffset), typeof(double), typeof(ScrollViewerOffsetMediator),
-                new PropertyMetadata(0.0, OnVerticalOffsetChanged, OnCoerceVerticalOffset));
-
-        public static readonly DependencyProperty HorizontalOffsetProperty =
-            DependencyProperty.Register(nameof(HorizontalOffset), typeof(double), typeof(ScrollViewerOffsetMediator),
-                new PropertyMetadata(0.0, OnHorizontalOffsetChanged, OnCoerceHorizontalOffset));
-
-        private bool _updating;
-
-        protected override Freezable CreateInstanceCore() => new ScrollViewerOffsetMediator();
-
-        public ScrollViewer? ScrollViewer
-        {
-            get => (ScrollViewer?)GetValue(ScrollViewerProperty);
-            set => SetValue(ScrollViewerProperty, value);
+            _from = from;
+            _to = to;
+            _vertical = vertical;
+            _start = DateTime.UtcNow;
+            _timer.Start();
         }
 
-        public double VerticalOffset
+        private void OnTick(object? sender, EventArgs e)
         {
-            get => (double)GetValue(VerticalOffsetProperty);
-            set => SetValue(VerticalOffsetProperty, value);
-        }
-
-        public double HorizontalOffset
-        {
-            get => (double)GetValue(HorizontalOffsetProperty);
-            set => SetValue(HorizontalOffsetProperty, value);
-        }
-
-        private static void OnScrollViewerChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            var mediator = (ScrollViewerOffsetMediator)d;
-            if (e.OldValue is ScrollViewer old)
-                old.ScrollChanged -= mediator.OnScrollChanged;
-            if (e.NewValue is ScrollViewer sv)
-                sv.ScrollChanged += mediator.OnScrollChanged;
-        }
-
-        private void OnScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-            if (_updating)
-                return;
-            _updating = true;
-            try
+            var t = (DateTime.UtcNow - _start).TotalMilliseconds / Duration.TotalMilliseconds;
+            double value;
+            if (t >= 1.0)
             {
-                SetCurrentValue(VerticalOffsetProperty, e.VerticalOffset);
-                SetCurrentValue(HorizontalOffsetProperty, e.HorizontalOffset);
+                _timer.Stop();
+                value = _to;
             }
-            finally
+            else
             {
-                _updating = false;
+                // 与旧实现一致的 QuadraticEase EaseOut 缓动：先快后慢
+                var eased = 1 - Math.Pow(1 - t, 2);
+                value = _from + (_to - _from) * eased;
             }
-        }
 
-        private static void OnVerticalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            var mediator = (ScrollViewerOffsetMediator)d;
-            if (mediator._updating || mediator.ScrollViewer is not { } sv)
+            // 逐帧以 ScrollViewer 实际偏移为基准校验：ScrollToVerticalOffset 的生效和
+            // ScrollChanged 事件是延迟到下一次布局才发生的，无法用它区分"本组件的滚动"
+            // 与"用户拖滚动条"，因此改为对比实际位置与动画预期位置。偏离过大说明存在
+            // 外部滚动（拖滚动条、键盘翻页、内容重排等），立即中断动画，以用户位置为准。
+            var actual = _vertical ? _viewer.VerticalOffset : _viewer.HorizontalOffset;
+            if (Math.Abs(actual - value) > ExternalJumpThreshold)
+            {
+                _timer.Stop();
                 return;
-            sv.ScrollToVerticalOffset((double)e.NewValue);
-        }
+            }
 
-        private static object OnCoerceVerticalOffset(DependencyObject d, object baseValue)
-        {
-            var mediator = (ScrollViewerOffsetMediator)d;
-            if (mediator.ScrollViewer is not { } sv || sv.ScrollableHeight <= 0)
-                return baseValue;
-            return Math.Clamp((double)baseValue, 0, sv.ScrollableHeight);
-        }
-
-        private static void OnHorizontalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            var mediator = (ScrollViewerOffsetMediator)d;
-            if (mediator._updating || mediator.ScrollViewer is not { } sv)
-                return;
-            sv.ScrollToHorizontalOffset((double)e.NewValue);
-        }
-
-        private static object OnCoerceHorizontalOffset(DependencyObject d, object baseValue)
-        {
-            var mediator = (ScrollViewerOffsetMediator)d;
-            if (mediator.ScrollViewer is not { } sv || sv.ScrollableWidth <= 0)
-                return baseValue;
-            return Math.Clamp((double)baseValue, 0, sv.ScrollableWidth);
+            if (_vertical)
+                _viewer.ScrollToVerticalOffset(value);
+            else
+                _viewer.ScrollToHorizontalOffset(value);
         }
     }
 }
