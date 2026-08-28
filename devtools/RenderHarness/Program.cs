@@ -29,6 +29,7 @@ public static class Program
         // 1. MainPage（真实会话数据 + 隐藏窗口渲染）
         var vm = new MainViewModel(api);
         vm.LoadSessionsAsync().GetAwaiter().GetResult();
+        vm.SelectAll = true; // 勾选全部，使批量导出/删除按钮处于可用态，便于视觉核对
         var page1 = new MainPage { DataContext = vm };
         RenderHostWindow(page1, Path.Combine(outDir, "m1-main.png"), 1040, 680);
 
@@ -51,7 +52,7 @@ public static class Program
         if (withNote != null)
             noteVm.LoadNoteAsync(withNote.Id).GetAwaiter().GetResult();
         var page3 = new NoteViewPage { DataContext = noteVm };
-        page3.Loaded += (_, _) => { page3.MarkdownBrowser.Visibility = Visibility.Collapsed; };
+        page3.Loaded += (_, _) => { HideWebView(page3); };
         RenderHostWindow(page3, Path.Combine(outDir, "m3-note.png"), 1040, 680);
 
         // 4. SettingsWindow
@@ -87,6 +88,18 @@ public static class Program
         Console.WriteLine("RENDER_DONE");
     }
 
+    static void HideWebView(DependencyObject root)
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Microsoft.Web.WebView2.Wpf.WebView2 wv)
+                wv.Visibility = Visibility.Collapsed;
+            else
+                HideWebView(child);
+        }
+    }
+
     static void RenderPageDirect(Page page, string path, double w, double h)
     {
         page.Measure(new Size(w, h));
@@ -97,6 +110,26 @@ public static class Program
 
     static void RenderHostWindow(object content, string path, double w, double h)
     {
+        // 内容本身是 Window 时不能嵌套进宿主窗口，直接离屏显示后渲染
+        if (content is Window window)
+        {
+            window.Width = w;
+            window.Height = h;
+            window.Left = -32000;
+            window.Top = -32000;
+            window.ShowInTaskbar = false;
+            window.ShowActivated = false;
+            window.Show();
+            try
+            {
+                Thread.Sleep(700);
+                window.UpdateLayout();
+                RenderToPng(window, path, w, h);
+            }
+            finally { window.Close(); }
+            return;
+        }
+
         var host = new Window
         {
             Width = w,
