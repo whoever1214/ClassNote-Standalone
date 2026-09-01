@@ -17,7 +17,7 @@ public partial class RecordingPage : Page
     /// </summary>
     public event EventHandler? RecordingEnded;
 
-    public RecordingPage(Guid sessionId, string course, string? micName = null)
+    public RecordingPage(Guid sessionId, string course, string? micName = null, string? micId = null)
     {
         InitializeComponent();
 
@@ -31,7 +31,8 @@ public partial class RecordingPage : Page
             new AudioService(),
             new ScreenshotService(),
             new UploadService("", api),
-            micName
+            micName,
+            micId
         );
         DataContext = _viewModel;
 

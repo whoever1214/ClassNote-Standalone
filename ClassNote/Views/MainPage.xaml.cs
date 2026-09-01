@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using ClassNote.Models;
 using ClassNote.Services;
@@ -12,11 +13,14 @@ public partial class MainPage : Page
 {
     private readonly MainViewModel _viewModel;
     private readonly DispatcherTimer _refreshTimer;
+    private readonly DispatcherTimer _healthTimer;
+    private readonly ILlmService _llm = new LlmService();
+    private int _healthCheckInFlight;
 
     /// <summary>
     /// Raised when the user clicks "开始记录" — carries the new session ID, course name and selected microphone.
     /// </summary>
-    public event EventHandler<(Guid SessionId, string Course, string? MicName)>? StartRecordingRequested;
+    public event EventHandler<(Guid SessionId, string Course, string? MicName, string? MicId)>? StartRecordingRequested;
 
     /// <summary>
     /// Raised when the user double-clicks a session in the list — carries the session ID.
@@ -34,12 +38,66 @@ public partial class MainPage : Page
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         _refreshTimer.Tick += async (_, _) => await RefreshAsync();
 
+        // LLM 健康检查：每 30 秒检测一次 v1 接口（本地模型服务可能中途挂起/恢复）
+        _healthTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _healthTimer.Tick += async (_, _) => await CheckLlmHealthAsync();
+
         Loaded += async (_, _) =>
         {
             await _viewModel.LoadSessionsAsync();
             EnsurePolling();
+            _healthTimer.Start();
+            await CheckLlmHealthAsync();
         };
-        Unloaded += (_, _) => _refreshTimer.Stop();
+        Unloaded += (_, _) =>
+        {
+            _refreshTimer.Stop();
+            _healthTimer.Stop();
+        };
+    }
+
+    /// <summary>
+    /// 检测 LLM v1 接口健康状态并刷新右上角状态胶囊（灰=未配置、绿=正常、红=不可达）。
+    /// 失败静默，等下一轮轮询重试；用互斥位避免上一轮未结束时重入。
+    /// </summary>
+    private async Task CheckLlmHealthAsync()
+    {
+        if (Interlocked.Exchange(ref _healthCheckInFlight, 1) != 0)
+            return;
+        try
+        {
+            var result = await _llm.CheckHealthAsync();
+            await Dispatcher.InvokeAsync(() => ApplyLlmHealth(result));
+        }
+        catch
+        {
+            // 健康检查失败静默：下一轮自动重试
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _healthCheckInFlight, 0);
+        }
+    }
+
+    private void ApplyLlmHealth(LlmHealthResult result)
+    {
+        if (LlmHealthText == null || LlmHealthDot == null)
+            return;
+        LlmHealthText.Text = result.Message;
+        var color = result.IsOk
+            ? (Brush)FindResource("SuccessBrush")
+            : result.IsConfigured
+                ? (Brush)FindResource("DangerBrush")
+                : (Brush)FindResource("TextHintBrush");
+        LlmHealthDot.Fill = color;
+    }
+
+    private void LlmHealthBadge_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var settings = new SettingsWindow { Owner = Window.GetWindow(this) };
+        settings.ShowDialog();
+        // 保存设置后立即刷新一次状态
+        _ = CheckLlmHealthAsync();
     }
 
     /// <summary>
@@ -69,9 +127,11 @@ public partial class MainPage : Page
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        // 1. 弹出配置界面：确认课程、输入标题、选择麦克风
-        var mics = new AudioService().GetInputDevices();
-        var setup = new RecordingSetupWindow(_viewModel.SelectedCourse, _viewModel.Courses, mics)
+        // 1. 弹出配置界面：确认课程、输入标题、选择麦克风（设备名 + 稳定 ID 一并枚举，避免二次枚举顺序不一致选错设备）
+        var audio = new AudioService();
+        var mics = audio.GetInputDevices();
+        var micIds = audio.GetInputDeviceIds();
+        var setup = new RecordingSetupWindow(_viewModel.SelectedCourse, _viewModel.Courses, mics, micIds)
         {
             Owner = Window.GetWindow(this),
         };
@@ -85,7 +145,8 @@ public partial class MainPage : Page
         if (sessionId.HasValue)
         {
             await _viewModel.LoadSessionsAsync();
-            StartRecordingRequested?.Invoke(this, (sessionId.Value, setup.Result.Course, setup.Result.MicName));
+            StartRecordingRequested?.Invoke(this,
+                (sessionId.Value, setup.Result.Course, setup.Result.MicName, setup.Result.MicId));
         }
     }
 

@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="设置 - LLM API 配置"
-        Height="478" Width="560"
+        Height="540" Width="560"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -36,6 +36,21 @@
                 <TextBlock Text="模型名称" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
                 <TextBox x:Name="ModelBox" Margin="0,0,0,14" />
+
+                <TextBlock Text="请求超时（秒）" FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                <TextBox x:Name="TimeoutBox" Margin="0,0,0,4" />
+                <TextBlock Text="本地模型推理较慢时请调大（范围 60–7200，默认 1800 = 30 分钟），可减少超时报错。"
+                           FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                           TextWrapping="Wrap" Margin="2,0,0,14" />
+
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                    <Button x:Name="TestButton" Content="测试连接" Style="{StaticResource GhostButtonStyle}"
+                            Width="96" Height="32" Click="TestButton_Click" />
+                    <TextBlock x:Name="TestResultText" FontSize="12" VerticalAlignment="Center"
+                               Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="360"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                </StackPanel>
 
                 <TextBlock Text="备用 API Key（可选，主配置失败时自动切换）" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />

@@ -43,6 +43,19 @@
                         </StackPanel>
                     </StackPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- LLM 服务状态（每 30 秒自动检测 v1 接口；点击打开设置） -->
+                        <Border x:Name="LlmHealthBadge" Background="#F4F5F8" CornerRadius="12"
+                                Padding="10,5" Margin="0,0,10,0" VerticalAlignment="Center"
+                                MouseLeftButtonUp="LlmHealthBadge_MouseLeftButtonUp"
+                                ToolTip="LLM 服务状态（每 30 秒自动检测 v1 接口）；点击可打开设置"
+                                Cursor="Hand">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <Ellipse x:Name="LlmHealthDot" Width="8" Height="8" Fill="#9AA3B2"
+                                         VerticalAlignment="Center" Margin="0,0,6,0" />
+                                <TextBlock x:Name="LlmHealthText" Text="LLM 检测中…" FontSize="12"
+                                           Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
                         <Button Style="{StaticResource IconButtonStyle}" ToolTip="刷新列表"
                                 Command="{Binding RefreshCommand}">
                             <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"

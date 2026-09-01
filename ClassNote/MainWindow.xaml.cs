@@ -27,9 +27,9 @@ public partial class MainWindow : Window
     /// <summary>
     /// Navigate to the recording page for a new session.
     /// </summary>
-    public void NavigateToRecordingPage(Guid sessionId, string course, string? micName)
+    public void NavigateToRecordingPage(Guid sessionId, string course, string? micName, string? micId = null)
     {
-        var recordingPage = new RecordingPage(sessionId, course, micName);
+        var recordingPage = new RecordingPage(sessionId, course, micName, micId);
         recordingPage.RecordingEnded += OnRecordingEnded;
         MainFrame.Navigate(recordingPage);
     }
@@ -46,9 +46,9 @@ public partial class MainWindow : Window
 
     // ── Event handlers ──────────────────────────────────────────────
 
-    private void OnMainPageStartRecording(object? sender, (Guid SessionId, string Course, string? MicName) args)
+    private void OnMainPageStartRecording(object? sender, (Guid SessionId, string Course, string? MicName, string? MicId) args)
     {
-        NavigateToRecordingPage(args.SessionId, args.Course, args.MicName);
+        NavigateToRecordingPage(args.SessionId, args.Course, args.MicName, args.MicId);
     }
 
     private void OnMainPageSessionSelected(object? sender, Guid sessionId)

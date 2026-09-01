@@ -17,13 +17,15 @@ public class RecordingViewModel : BaseViewModel
     private int _screenshotCount;
     private double _elapsedSeconds;
     private string _selectedMic = "";
+    private string _selectedMicId = "";
     private string[] _availableMics = Array.Empty<string>();
+    private string[] _availableMicIds = Array.Empty<string>();
     private DispatcherTimer? _elapsedTimer;
     private Task? _backgroundProcessing;
 
     public RecordingViewModel(Guid sessionId, IApiService api, IAudioService audio,
         IScreenshotService screenshot, IUploadService upload, string? micName = null,
-        INoteProcessor? processor = null)
+        string? micId = null, INoteProcessor? processor = null)
     {
         _sessionId = sessionId;
         _api = api;
@@ -34,10 +36,32 @@ public class RecordingViewModel : BaseViewModel
             new SenseVoiceSttService(), new WindowsOcrService(), new LlmService());
         _screenshot.ScreenshotCaptured += OnScreenshotCaptured;
         AvailableMics = _audio.GetInputDevices();
-        if (micName != null && AvailableMics.Contains(micName))
-            SelectedMic = micName;
-        else if (AvailableMics.Length > 0)
+        AvailableMicIds = _audio.GetInputDeviceIds();
+
+        // 优先按稳定设备 ID 匹配（消除名称/枚举顺序不一致导致的"选 USB 麦克风却录到内置麦"）
+        if (!string.IsNullOrEmpty(micId))
+        {
+            int idx = Array.IndexOf(AvailableMicIds, micId);
+            if (idx >= 0)
+            {
+                SelectedMicId = micId;
+                SelectedMic = AvailableMics[idx];
+            }
+        }
+        if (SelectedMicId.Length == 0 && !string.IsNullOrEmpty(micName))
+        {
+            int idx = Array.IndexOf(AvailableMics, micName);
+            if (idx >= 0 && idx < AvailableMicIds.Length)
+            {
+                SelectedMicId = AvailableMicIds[idx];
+                SelectedMic = micName;
+            }
+        }
+        if (SelectedMicId.Length == 0 && AvailableMics.Length > 0)
+        {
+            SelectedMicId = AvailableMicIds.Length > 0 ? AvailableMicIds[0] : "";
             SelectedMic = AvailableMics[0];
+        }
     }
 
     public string StatusText { get => _statusText; set { _statusText = value; OnPropertyChanged(); } }
@@ -50,17 +74,38 @@ public class RecordingViewModel : BaseViewModel
     public Task? BackgroundProcessingTask => _backgroundProcessing;
     public double ElapsedSeconds { get => _elapsedSeconds; set { _elapsedSeconds = value; OnPropertyChanged(); OnPropertyChanged(nameof(ElapsedDisplay)); } }
     public string ElapsedDisplay => TimeSpan.FromSeconds(ElapsedSeconds).ToString(@"hh\:mm\:ss");
-    public string SelectedMic { get => _selectedMic; set { _selectedMic = value; OnPropertyChanged(); } }
+    public string SelectedMic
+    {
+        get => _selectedMic;
+        set
+        {
+            _selectedMic = value;
+            OnPropertyChanged();
+            // 下拉切换时同步设备 ID（与 AvailableMicIds 一一对应）
+            int idx = Array.IndexOf(AvailableMics, value);
+            if (idx >= 0 && idx < AvailableMicIds.Length)
+                SelectedMicId = AvailableMicIds[idx];
+        }
+    }
+    public string SelectedMicId { get => _selectedMicId; set { _selectedMicId = value; OnPropertyChanged(); } }
     public string[] AvailableMics { get => _availableMics; set { _availableMics = value; OnPropertyChanged(); } }
+    public string[] AvailableMicIds { get => _availableMicIds; set { _availableMicIds = value; OnPropertyChanged(); } }
 
     public Task StartRecordingAsync()
     {
         var audioPath = Path.Combine(Path.GetTempPath(), $"classnote_{_sessionId}.wav");
-        var micIndex = Array.IndexOf(AvailableMics, SelectedMic);
 
-        if (!_audio.StartRecording(audioPath, micIndex >= 0 ? micIndex : 0))
+        if (string.IsNullOrEmpty(SelectedMicId))
         {
-            StatusText = "录音启动失败";
+            StatusText = "录音启动失败：未检测到可用麦克风";
+            return Task.CompletedTask;
+        }
+
+        if (!_audio.StartRecording(audioPath, SelectedMicId))
+        {
+            StatusText = _audio.LastError != null
+                ? "录音启动失败：" + _audio.LastError
+                : "录音启动失败";
             return Task.CompletedTask;
         }
 

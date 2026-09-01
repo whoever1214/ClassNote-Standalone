@@ -26,6 +26,12 @@ public class AppSettingsData
 
     /// <summary>备用基础地址。</summary>
     public string LlmFallbackBaseUrl { get; set; } = "";
+
+    /// <summary>
+    /// LLM 请求超时（秒）。本地模型推理较慢时调大；默认 1800（30 分钟）。
+    /// 0 或负数视为未配置，按默认值处理（兼容旧版 settings.json）。
+    /// </summary>
+    public int LlmTimeoutSeconds { get; set; } = 1800;
 }
 
 /// <summary>
@@ -118,5 +124,6 @@ public sealed class AppSettings
         LlmVisionModel = src.LlmVisionModel,
         LlmFallbackApiKey = src.LlmFallbackApiKey,
         LlmFallbackBaseUrl = src.LlmFallbackBaseUrl,
+        LlmTimeoutSeconds = src.LlmTimeoutSeconds,
     };
 }

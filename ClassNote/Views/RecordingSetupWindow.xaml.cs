@@ -8,12 +8,15 @@ namespace ClassNote.Views;
 /// </summary>
 public partial class RecordingSetupWindow : Window
 {
+    private readonly string[] _micIds;
+
     /// <summary>Result after the user clicks "开始录制". Null if canceled.</summary>
     public RecordingSetupResult? Result { get; private set; }
 
-    public RecordingSetupWindow(string currentCourse, string[] courses, string[] mics)
+    public RecordingSetupWindow(string currentCourse, string[] courses, string[] mics, string[]? micIds = null)
     {
         InitializeComponent();
+        _micIds = micIds ?? Array.Empty<string>();
 
         CourseCombo.ItemsSource = courses;
         int courseIdx = Array.IndexOf(courses, currentCourse);
@@ -34,11 +37,13 @@ public partial class RecordingSetupWindow : Window
 
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
+        int idx = MicCombo.SelectedIndex;
         Result = new RecordingSetupResult
         {
             Course = CourseCombo.SelectedItem as string ?? "",
             Title = string.IsNullOrWhiteSpace(TitleBox.Text) ? null : TitleBox.Text.Trim(),
             MicName = MicCombo.SelectedItem as string,
+            MicId = idx >= 0 && idx < _micIds.Length ? _micIds[idx] : null,
         };
         DialogResult = true;
     }
@@ -55,4 +60,7 @@ public class RecordingSetupResult
     public string Course { get; set; } = "";
     public string? Title { get; set; }
     public string? MicName { get; set; }
+
+    /// <summary>所选麦克风的稳定设备标识（WASAPI ID 或 mme:{index}）；未选择时为 null。</summary>
+    public string? MicId { get; set; }
 }
