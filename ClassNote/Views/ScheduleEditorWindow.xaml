@@ -1,0 +1,119 @@
+<Window x:Class="ClassNote.Views.ScheduleEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="课程安排 · 编辑课表"
+        Width="860" Height="640"
+        MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="SingleBorderWindow"
+        Background="{StaticResource BgBrush}"
+        FontFamily="{StaticResource AppFont}"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid Margin="26,20,26,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 头部 -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <StackPanel HorizontalAlignment="Left">
+                <TextBlock Text="课程安排" FontSize="20" FontWeight="Bold" />
+                <TextBlock Text="维护每周固定课程：到点自动开始录音、下课自动结束。保存后课表页与调度即时生效。"
+                           FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,3,0,0" />
+            </StackPanel>
+            <Button HorizontalAlignment="Right" VerticalAlignment="Center" x:Name="AddButton"
+                    Style="{StaticResource PrimaryGhostButtonStyle}" Height="36" Padding="18,0"
+                    Click="AddButton_Click" ToolTip="新增一节固定课程">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="＋" FontSize="16" VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBlock Text="添加课程" FontSize="13" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- 编辑说明（无课程时给操作指引） -->
+        <Border x:Name="HelpBanner" Grid.Row="1" Background="{StaticResource PrimaryLightBrush}"
+                CornerRadius="10" Padding="14,9" Margin="0,0,0,12" Visibility="Collapsed">
+            <TextBlock FontSize="12" Foreground="#33415C" TextWrapping="Wrap"
+                       Text="点击「添加课程」创建一条：选择星期、填写起止时间与课程名。同一时间只允许一节课；勾掉「参与定时录音」可临时停用而无需删除。" />
+        </Border>
+
+        <!-- 课表条目列表：按 星期 → 开始时间 排序 -->
+        <Grid Grid.Row="2">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="EntryList">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,8" Padding="14,10">
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Left" Background="#EDEFF5" CornerRadius="8"
+                                            Padding="9,4" VerticalAlignment="Center" Margin="0,0,10,0"
+                                            MinWidth="46">
+                                        <TextBlock Text="{Binding WeekdayShort}" FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   HorizontalAlignment="Center" />
+                                    </Border>
+                                    <Border DockPanel.Dock="Left" Background="{StaticResource PrimaryLightBrush}"
+                                            CornerRadius="8" Padding="10,4" VerticalAlignment="Center"
+                                            Margin="0,0,12,0" MinWidth="108">
+                                        <TextBlock Text="{Binding TimeRangeText}" FontSize="12" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource PrimaryDarkBrush}"
+                                                   HorizontalAlignment="Center" />
+                                    </Border>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <Button Content="编辑" Style="{StaticResource GhostButtonStyle}"
+                                                Height="28" Padding="14,0" Click="EditButton_Click" />
+                                        <Button Content="{Binding ToggleLabel}" Style="{StaticResource GhostButtonStyle}"
+                                                Height="28" Padding="14,0" Margin="8,0,0,0"
+                                                Click="ToggleButton_Click" />
+                                        <Button Content="删除" Style="{StaticResource DangerGhostButtonStyle}"
+                                                Height="28" Padding="14,0" Margin="8,0,0,0"
+                                                Click="DeleteButton_Click" />
+                                    </StackPanel>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Course}" FontSize="14" FontWeight="SemiBold"
+                                                       VerticalAlignment="Center" />
+                                            <Border Background="{StaticResource DangerLightBrush}" CornerRadius="6"
+                                                    Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                    Visibility="{Binding DisabledBadgeVisible, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="已停用" FontSize="10"
+                                                           Foreground="{StaticResource DangerBrush}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Title, TargetNullValue=''}" FontSize="11"
+                                                   Foreground="{StaticResource TextHintBrush}" Margin="0,2,0,0"
+                                                   TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DockPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <TextBlock x:Name="EmptyHint" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="13" Foreground="{StaticResource TextHintBrush}" TextWrapping="Wrap"
+                       TextAlignment="Center" Text="暂无课程。&#x0a;点击右上角「添加课程」，按课表录入每周固定课程。" />
+        </Grid>
+
+        <!-- 底部操作 -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <TextBlock x:Name="CountText" FontSize="12" Foreground="{StaticResource TextHintBrush}"
+                       VerticalAlignment="Center" Margin="0,0,16,0" />
+            <Button Content="取消" Style="{StaticResource GhostButtonStyle}" Width="92" Height="36"
+                    Margin="0,0,12,0" Click="CancelButton_Click" />
+            <Button Content="保存课表" Style="{StaticResource PrimaryButtonStyle}" Width="112" Height="36"
+                    Click="SaveButton_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

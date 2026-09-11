@@ -27,6 +27,9 @@ public partial class MainPage : Page
     /// </summary>
     public event EventHandler<Guid>? SessionSelected;
 
+    /// <summary>Raised when the user clicks 顶部时钟图标 — 请求跳转到"定时记录 · 每周课表"页面。</summary>
+    public event EventHandler? ScheduleRequested;
+
     public MainPage()
     {
         InitializeComponent();
@@ -123,6 +126,12 @@ public partial class MainPage : Page
     {
         var settings = new SettingsWindow { Owner = Window.GetWindow(this) };
         settings.ShowDialog();
+    }
+
+    /// <summary>请求跳转到「定时记录 · 每周课表」页面（由 MainWindow 处理实际导航）。</summary>
+    private void ScheduleButton_Click(object sender, RoutedEventArgs e)
+    {
+        ScheduleRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)

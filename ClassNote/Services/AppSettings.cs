@@ -32,6 +32,18 @@ public class AppSettingsData
     /// 0 或负数视为未配置，按默认值处理（兼容旧版 settings.json）。
     /// </summary>
     public int LlmTimeoutSeconds { get; set; } = 1800;
+
+    /// <summary>定时记录总开关：开启后依据每周课表到点自动开始 / 结束录音。</summary>
+    public bool ScheduleEnabled { get; set; }
+
+    /// <summary>是否随 Windows 登录自启动并驻留托盘（定时记录需要后台运行）。</summary>
+    public bool ScheduleLaunchAtStartup { get; set; }
+
+    /// <summary>定时自动录音使用的默认麦克风稳定 ID（空 = 系统默认设备）。</summary>
+    public string ScheduleMicId { get; set; } = "";
+
+    /// <summary>默认麦克风显示名（仅用于设置界面展示，选录以 ScheduleMicId 为准）。</summary>
+    public string ScheduleMicName { get; set; } = "";
 }
 
 /// <summary>
@@ -125,5 +137,9 @@ public sealed class AppSettings
         LlmFallbackApiKey = src.LlmFallbackApiKey,
         LlmFallbackBaseUrl = src.LlmFallbackBaseUrl,
         LlmTimeoutSeconds = src.LlmTimeoutSeconds,
+        ScheduleEnabled = src.ScheduleEnabled,
+        ScheduleLaunchAtStartup = src.ScheduleLaunchAtStartup,
+        ScheduleMicId = src.ScheduleMicId,
+        ScheduleMicName = src.ScheduleMicName,
     };
 }

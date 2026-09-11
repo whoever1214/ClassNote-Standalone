@@ -12,16 +12,33 @@ public partial class RecordingPage : Page
     private readonly RecordingViewModel _viewModel;
     private readonly DispatcherTimer _uiTimer;
 
+    /// <summary>定时自动结束时刻（课表触发时传入；到点自动停止录音）。</summary>
+    private readonly DateTime? _autoStopAt;
+
+    /// <summary>自动停止是否已触发（避免与手动"结束录音"并发执行两次收尾）。</summary>
+    private bool _stopping;
+
     /// <summary>
-    /// Raised when recording ends (user clicked "结束录音" and stop completed).
+    /// Raised when recording ends (user clicked "结束录音" or scheduled auto-stop fired).
     /// </summary>
     public event EventHandler? RecordingEnded;
 
-    public RecordingPage(Guid sessionId, string course, string? micName = null, string? micId = null)
+    /// <summary>当前是否处于录音中（调度器用它判断是否已在录音）。</summary>
+    public bool IsRecording => _viewModel.StatusText == "录音中";
+
+    public RecordingPage(Guid sessionId, string course, string? micName = null, string? micId = null,
+        DateTime? autoStopAt = null)
     {
         InitializeComponent();
 
         CourseLabel.Text = course;
+        _autoStopAt = autoStopAt;
+
+        if (_autoStopAt is DateTime end)
+        {
+            ScheduleBadge.Visibility = Visibility.Visible;
+            ScheduleBadgeText.Text = $"定时记录 · {end:HH:mm} 自动结束";
+        }
 
         // 单机模式：在页面内组装本地依赖（无服务端）
         var api = new ApiService();
@@ -52,6 +69,7 @@ public partial class RecordingPage : Page
             _uiTimer.Start();
             UploadProgressBar.Visibility = Visibility.Visible;
             UploadStatusText.Visibility = Visibility.Visible;
+            StartAutoStopWatcher();
         }
         else
         {
@@ -61,8 +79,40 @@ public partial class RecordingPage : Page
         }
     }
 
+    /// <summary>
+    /// 定时触发：启动秒级看门狗，到 <see cref="_autoStopAt"/> 时自动结束录音
+    /// （与手动点"结束录音"走同一收尾路径）。
+    /// </summary>
+    private void StartAutoStopWatcher()
+    {
+        if (_autoStopAt == null)
+            return;
+        var watcher = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        watcher.Tick += async (_, _) =>
+        {
+            if (_stopping || _viewModel.StatusText != "录音中")
+                return;
+            if (DateTime.Now >= _autoStopAt.Value)
+            {
+                watcher.Stop();
+                await StopRecordingAsync();
+            }
+        };
+        watcher.Start();
+    }
+
     private async void EndButton_Click(object sender, RoutedEventArgs e)
     {
+        await StopRecordingAsync();
+    }
+
+    /// <summary>统一的录音收尾：手动"结束录音"与定时自动结束共用同一路径。</summary>
+    private async Task StopRecordingAsync()
+    {
+        if (_stopping)
+            return;
+        _stopping = true;
+
         EndButton.IsEnabled = false;
         EndButton.Content = "正在停止...";
 

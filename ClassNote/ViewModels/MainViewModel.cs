@@ -13,8 +13,11 @@ public class MainViewModel : BaseViewModel
 
     public ObservableCollection<Session> RecentSessions { get; } = new();
 
-    public string[] Courses { get; } =
+    /// <summary>内置课程候选（课程下拉/课表编辑器共用）。</summary>
+    public static string[] DefaultCourses { get; } =
         { "语文", "数学", "英语", "物理", "化学", "生物", "历史", "政治", "地理" };
+
+    public string[] Courses => DefaultCourses;
 
     private string _selectedCourse = "数学";
     public string SelectedCourse

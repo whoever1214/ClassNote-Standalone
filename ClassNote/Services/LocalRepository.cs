@@ -62,6 +62,16 @@ public sealed class LocalRepository : IDisposable
                 key_points TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS schedule_entries (
+                id TEXT PRIMARY KEY,
+                weekday_index INTEGER NOT NULL,
+                start_min INTEGER NOT NULL,
+                end_min INTEGER NOT NULL,
+                course TEXT NOT NULL,
+                title TEXT,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );", db);
         cmd.ExecuteNonQuery();
 
@@ -380,6 +390,74 @@ public sealed class LocalRepository : IDisposable
             { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
             using (var cmd = new SQLiteCommand("DELETE FROM sessions WHERE id = @s", db))
             { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
+        }
+    }
+
+    // ── 课表（定时记录）──────────────────────────────────────
+
+    /// <summary>读取全部每周课表条目（未按时间排序）。</summary>
+    public List<Models.ScheduleEntry> ListScheduleEntries()
+    {
+        using var db = NewConnection();
+        db.Open();
+        using var cmd = new SQLiteCommand(
+            "SELECT id, weekday_index, start_min, end_min, course, title, enabled FROM schedule_entries", db);
+        var list = new List<Models.ScheduleEntry>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new Models.ScheduleEntry
+            {
+                Id = Guid.Parse(reader.GetString(0)),
+                WeekdayIndex = reader.GetInt32(1),
+                StartMin = reader.GetInt32(2),
+                EndMin = reader.GetInt32(3),
+                Course = reader.GetString(4),
+                Title = reader.IsDBNull(5) ? null : reader.GetString(5),
+                Enabled = reader.GetInt32(6) != 0,
+            });
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// 全量覆盖保存课表（事务内先删后插）。UI 编辑器每次"保存"整体提交，
+    /// 条目少、频率低，全量替换比逐条 diff 更简单可靠，且保证与内存一致。
+    /// </summary>
+    public void ReplaceScheduleEntries(IEnumerable<Models.ScheduleEntry> entries)
+    {
+        lock (_writeLock)
+        {
+            using var db = NewConnection();
+            db.Open();
+            using var tx = db.BeginTransaction();
+            using (var del = new SQLiteCommand("DELETE FROM schedule_entries", db))
+                del.ExecuteNonQuery();
+
+            using var cmd = new SQLiteCommand(@"
+                INSERT INTO schedule_entries (id, weekday_index, start_min, end_min, course, title, enabled, created_at)
+                VALUES (@id, @wd, @s, @e, @c, @t, @en, @ca)", db);
+            var idP = cmd.Parameters.Add("@id", System.Data.DbType.String);
+            var wdP = cmd.Parameters.Add("@wd", System.Data.DbType.Int32);
+            var sP = cmd.Parameters.Add("@s", System.Data.DbType.Int32);
+            var eP = cmd.Parameters.Add("@e", System.Data.DbType.Int32);
+            var cP = cmd.Parameters.Add("@c", System.Data.DbType.String);
+            var tP = cmd.Parameters.Add("@t", System.Data.DbType.String);
+            var enP = cmd.Parameters.Add("@en", System.Data.DbType.Int32);
+            var caP = cmd.Parameters.Add("@ca", System.Data.DbType.String);
+            foreach (var entry in entries)
+            {
+                idP.Value = entry.Id.ToString();
+                wdP.Value = entry.WeekdayIndex;
+                sP.Value = entry.StartMin;
+                eP.Value = entry.EndMin;
+                cP.Value = entry.Course;
+                tP.Value = (object?)entry.Title ?? DBNull.Value;
+                enP.Value = entry.Enabled ? 1 : 0;
+                caP.Value = Now();
+                cmd.ExecuteNonQuery();
+            }
+            tx.Commit();
         }
     }
 

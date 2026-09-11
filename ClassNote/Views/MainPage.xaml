@@ -61,7 +61,12 @@
                             <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
                                        FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Button>
-                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="设置（LLM API 配置）"
+                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="定时记录 · 每周课表（到点自动录音）"
+                                Click="ScheduleButton_Click" Margin="8,0,0,0">
+                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
+                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="设置（LLM API / 定时默认麦克风）"
                                 Click="SettingsButton_Click" Margin="8,0,0,0">
                             <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
                                        FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />

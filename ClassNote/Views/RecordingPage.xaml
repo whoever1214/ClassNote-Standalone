@@ -74,6 +74,18 @@
             </StackPanel>
         </Border>
 
+        <!-- 定时自动结束角标（仅课表定时触发的录音显示；到点自动停止） -->
+        <Border x:Name="ScheduleBadge" Visibility="Collapsed"
+                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,52,22,0"
+                Background="#14F59E0B" CornerRadius="10" Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                           Foreground="#B26A00" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <TextBlock x:Name="ScheduleBadgeText" FontSize="12" FontWeight="SemiBold"
+                           Foreground="#8A5200" VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
+
         <Border Width="540" VerticalAlignment="Center" HorizontalAlignment="Center"
                 Style="{StaticResource CardBorderStyle}">
             <Grid Margin="36,34">
