@@ -64,10 +64,10 @@ public partial class MainWindow : Window
     /// <summary>
     /// Navigate to the recording page for a new session.
     /// </summary>
-    public void NavigateToRecordingPage(Guid sessionId, string course, string? micName, string? micId = null,
+    public void NavigateToRecordingPage(Guid sessionId, string course, RecordingConfig? config = null,
         DateTime? autoStopAt = null)
     {
-        var recordingPage = new RecordingPage(sessionId, course, micName, micId, autoStopAt);
+        var recordingPage = new RecordingPage(sessionId, course, config, autoStopAt);
         recordingPage.RecordingEnded += OnRecordingEnded;
         MainFrame.Navigate(recordingPage);
     }
@@ -148,13 +148,21 @@ public partial class MainWindow : Window
             return;
         }
 
-        // 无可用麦克风时不创建空会话，跳过并在托盘提示
+        // 无可用麦克风时不创建空会话，跳过并在托盘提示（仅麦克风来源强依赖采集端点）
+        var settings = AppSettings.Instance.Snapshot();
+        var config = AppSettings.ToRecordingConfig(settings);
         var audio = new AudioService();
-        var mics = audio.GetInputDevices();
-        if (mics.Length == 0)
+        if (config.NeedsMicrophone)
         {
-            ShowTrayBalloonIfHidden("定时记录已跳过", $"未检测到麦克风，「{entry.Course}」本次跳过。");
-            return;
+            var micIds = audio.GetInputDeviceIds();
+            if (micIds.Length == 0)
+            {
+                ShowTrayBalloonIfHidden("定时记录已跳过", $"未检测到麦克风，「{entry.Course}」本次跳过。");
+                return;
+            }
+            // 设置为"混合"但设备已拔出时，把失效的麦克风 ID 去掉，由采集服务回退系统默认设备
+            if (config.MicId != null && !micIds.Contains(config.MicId))
+                config = config with { MicId = null };
         }
 
         try
@@ -162,21 +170,12 @@ public partial class MainWindow : Window
             var api = new ApiService();
             var sessionId = await api.CreateSessionAsync(entry.Course, entry.Title);
 
-            // 定时录音使用设置中的"默认麦克风"；未设置或设备已拔出 → null（录音页回退首个可用设备/系统默认）
-            var settings = AppSettings.Instance.Snapshot();
-            string? micId = string.IsNullOrWhiteSpace(settings.ScheduleMicId) ? null : settings.ScheduleMicId;
-            string? micName = string.IsNullOrWhiteSpace(settings.ScheduleMicName) ? null : settings.ScheduleMicName;
-            if (micId != null && !audio.GetInputDeviceIds().Contains(micId))
-            {
-                micId = null;
-                micName = null;
-            }
-
             // 后台静默开始：主窗口保持原状态（隐藏/最小化都不唤出），
             // 录音页在隐藏窗口内导航即可 Loaded 并开始录音；用户下次打开主界面就能看到本次录音。
-            NavigateToRecordingPage(sessionId, entry.Course, micName, micId, autoStopAt: occ.End);
+            NavigateToRecordingPage(sessionId, entry.Course, config, autoStopAt: occ.End);
             ShowTrayBalloonIfHidden("定时记录已自动开始",
-                $"{entry.WeekdayName} {entry.Course}（{occ.Start:HH:mm}–{occ.End:HH:mm}），到点自动结束。");
+                $"{entry.WeekdayName} {entry.Course}（{occ.Start:HH:mm}–{occ.End:HH:mm}），" +
+                $"来源：{AudioSourceKinds.ToDisplayName(config.Source)}，到点自动结束。");
         }
         catch (Exception ex)
         {
@@ -333,9 +332,9 @@ public partial class MainWindow : Window
 
     // ── Event handlers ──────────────────────────────────────
 
-    private void OnMainPageStartRecording(object? sender, (Guid SessionId, string Course, string? MicName, string? MicId) args)
+    private void OnMainPageStartRecording(object? sender, (Guid SessionId, string Course, RecordingConfig Config) args)
     {
-        NavigateToRecordingPage(args.SessionId, args.Course, args.MicName, args.MicId);
+        NavigateToRecordingPage(args.SessionId, args.Course, args.Config);
     }
 
     private void OnMainPageSessionSelected(object? sender, Guid sessionId)

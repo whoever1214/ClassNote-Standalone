@@ -23,9 +23,12 @@ public class RecordingViewModel : BaseViewModel
     private DispatcherTimer? _elapsedTimer;
     private Task? _backgroundProcessing;
 
+    /// <summary>本次录音的采集配置（来源 + 设备）。</summary>
+    private RecordingConfig _config = RecordingConfig.Default;
+
     public RecordingViewModel(Guid sessionId, IApiService api, IAudioService audio,
-        IScreenshotService screenshot, IUploadService upload, string? micName = null,
-        string? micId = null, INoteProcessor? processor = null)
+        IScreenshotService screenshot, IUploadService upload,
+        RecordingConfig? config = null, INoteProcessor? processor = null)
     {
         _sessionId = sessionId;
         _api = api;
@@ -38,23 +41,28 @@ public class RecordingViewModel : BaseViewModel
         AvailableMics = _audio.GetInputDevices();
         AvailableMicIds = _audio.GetInputDeviceIds();
 
+        var desired = config ?? RecordingConfig.Default;
+        _config = desired;
+        SourceDisplayName = AudioSourceKinds.ToDisplayName(desired.Source);
+
         // 优先按稳定设备 ID 匹配（消除名称/枚举顺序不一致导致的"选 USB 麦克风却录到内置麦"）
-        if (!string.IsNullOrEmpty(micId))
+        if (!string.IsNullOrEmpty(desired.MicId))
         {
-            int idx = Array.IndexOf(AvailableMicIds, micId);
+            int idx = Array.IndexOf(AvailableMicIds, desired.MicId);
             if (idx >= 0)
             {
-                SelectedMicId = micId;
+                SelectedMicId = desired.MicId;
                 SelectedMic = AvailableMics[idx];
             }
         }
-        if (SelectedMicId.Length == 0 && !string.IsNullOrEmpty(micName))
+        // ID 缺失或已失效（设备被拔出/重装驱动）时，退回按显示名匹配
+        if (SelectedMicId.Length == 0 && !string.IsNullOrEmpty(desired.MicName))
         {
-            int idx = Array.IndexOf(AvailableMics, micName);
+            int idx = Array.IndexOf(AvailableMics, desired.MicName);
             if (idx >= 0 && idx < AvailableMicIds.Length)
             {
                 SelectedMicId = AvailableMicIds[idx];
-                SelectedMic = micName;
+                SelectedMic = desired.MicName;
             }
         }
         if (SelectedMicId.Length == 0 && AvailableMics.Length > 0)
@@ -62,7 +70,22 @@ public class RecordingViewModel : BaseViewModel
             SelectedMicId = AvailableMicIds.Length > 0 ? AvailableMicIds[0] : "";
             SelectedMic = AvailableMics[0];
         }
+
+        // 设备已拔出/被改名时更新配置，避免采集服务再去解析一个失效 ID
+        _config = _config with
+        {
+            MicId = string.IsNullOrEmpty(SelectedMicId) ? null : SelectedMicId,
+        };
     }
+
+    /// <summary>本次录音的声音来源（界面展示用）。</summary>
+    public string SourceDisplayName { get; }
+
+    /// <summary>本次录音是否使用麦克风（决定录音页是否显示麦克风选择）。</summary>
+    public bool UsesMicrophone => _config.NeedsMicrophone;
+
+    /// <summary>本次录音是否采集系统声音。</summary>
+    public bool UsesSystemAudio => _config.NeedsSystemAudio;
 
     public string StatusText { get => _statusText; set { _statusText = value; OnPropertyChanged(); } }
     public int ScreenshotCount { get => _screenshotCount; set { _screenshotCount = value; OnPropertyChanged(); } }
@@ -87,7 +110,18 @@ public class RecordingViewModel : BaseViewModel
                 SelectedMicId = AvailableMicIds[idx];
         }
     }
-    public string SelectedMicId { get => _selectedMicId; set { _selectedMicId = value; OnPropertyChanged(); } }
+    public string SelectedMicId
+    {
+        get => _selectedMicId;
+        set
+        {
+            _selectedMicId = value;
+            OnPropertyChanged();
+            // 下拉切换后同步采集配置，避免界面显示与真正录制的设备不一致
+            if (_config.NeedsMicrophone)
+                _config = _config with { MicId = string.IsNullOrEmpty(value) ? null : value };
+        }
+    }
     public string[] AvailableMics { get => _availableMics; set { _availableMics = value; OnPropertyChanged(); } }
     public string[] AvailableMicIds { get => _availableMicIds; set { _availableMicIds = value; OnPropertyChanged(); } }
 
@@ -95,13 +129,14 @@ public class RecordingViewModel : BaseViewModel
     {
         var audioPath = Path.Combine(Path.GetTempPath(), $"classnote_{_sessionId}.wav");
 
-        if (string.IsNullOrEmpty(SelectedMicId))
+        // 只在需要麦克风时校验麦克风是否存在：系统声音来源不依赖采集端点
+        if (_config.NeedsMicrophone && string.IsNullOrEmpty(SelectedMicId))
         {
             StatusText = "录音启动失败：未检测到可用麦克风";
             return Task.CompletedTask;
         }
 
-        if (!_audio.StartRecording(audioPath, SelectedMicId))
+        if (!_audio.StartRecording(audioPath, _config))
         {
             StatusText = _audio.LastError != null
                 ? "录音启动失败：" + _audio.LastError

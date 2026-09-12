@@ -64,13 +64,17 @@
             </LinearGradientBrush>
         </Grid.Background>
 
-        <!-- 显示课程名的角标（页面右上角） -->
+        <!-- 显示课程名与声音来源的角标（页面右上角） -->
         <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,18,22,0"
                 Background="#33FFFFFF" CornerRadius="10" Padding="12,6">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="课程：" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
-                <TextBlock x:Name="CourseLabel" FontSize="12" FontWeight="Bold"
-                           Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="课程：" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock x:Name="CourseLabel" FontSize="12" FontWeight="Bold"
+                               Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock x:Name="SourceLabel" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                           Margin="0,3,0,0" />
             </StackPanel>
         </Border>
 
@@ -152,13 +156,27 @@
                                HorizontalAlignment="Center" Margin="0,9,0,0" />
                 </StackPanel>
 
-                <!-- 麦克风选择 -->
-                <StackPanel Grid.Row="5" Margin="0,0,0,22">
+                <!-- 麦克风选择：仅当本次来源包含麦克风时显示 -->
+                <StackPanel Grid.Row="5" Margin="0,0,0,22"
+                            Visibility="{Binding UsesMicrophone, Converter={StaticResource BoolToVisibilityConverter}}">
                     <TextBlock Text="麦克风" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                Margin="0,0,0,6" />
                     <ComboBox ItemsSource="{Binding AvailableMics}"
                               SelectedItem="{Binding SelectedMic, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
+
+                <!-- 仅采集系统声音时说明录制对象，避免用户以为"没在录" -->
+                <Border Grid.Row="5" Margin="0,0,0,22" Background="#F4F5F8" CornerRadius="10" Padding="14,10"
+                        Visibility="{Binding UsesMicrophone, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE7F8;" FontFamily="Segoe MDL2 Assets" FontSize="14"
+                                   Foreground="{StaticResource PrimaryBrush}" Margin="0,0,8,0"
+                                   VerticalAlignment="Center" />
+                        <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   TextWrapping="Wrap" MaxWidth="400" VerticalAlignment="Center"
+                                   Text="正在录制系统声音：请让课件 / 视频在所选播放设备上出声。" />
+                    </StackPanel>
+                </Border>
 
                 <!-- 结束录音 -->
                 <Button Grid.Row="6" x:Name="EndButton" Style="{StaticResource DangerButtonStyle}"

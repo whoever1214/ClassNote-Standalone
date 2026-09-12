@@ -41,6 +41,7 @@ public class RecordingViewModelTests
             .Returns(Task.CompletedTask);
         // 设备 ID 默认空数组（各测试用 SetupMics 显式提供）
         _mockAudio.Setup(x => x.GetInputDeviceIds()).Returns(Array.Empty<string>());
+        _mockAudio.Setup(x => x.GetInputDevices()).Returns(Array.Empty<string>());
 
         _tmpDir = Path.Combine(Path.GetTempPath(), $"classnote_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tmpDir);
@@ -53,10 +54,12 @@ public class RecordingViewModelTests
         _mockAudio.Setup(x => x.GetInputDeviceIds()).Returns(ids ?? names.Select(n => "id:" + n).ToArray());
     }
 
-    private RecordingViewModel CreateVm(string? micName = null, string? micId = null)
+    private RecordingViewModel CreateVm(string? micName = null, string? micId = null,
+        AudioSourceKind source = AudioSourceKind.Microphone)
     {
+        var config = new RecordingConfig(source, micId, MicName: micName);
         return new RecordingViewModel(_sessionId, _mockApi.Object, _mockAudio.Object,
-            _mockScreenshot.Object, _mockUpload.Object, micName, micId, _mockProcessor.Object);
+            _mockScreenshot.Object, _mockUpload.Object, config, _mockProcessor.Object);
     }
 
     /// <summary>在临时目录创建录音文件并让 GetOutputPath 指向它。</summary>
@@ -172,12 +175,16 @@ public class RecordingViewModelTests
         Assert.Equal("id-2", vm.SelectedMicId);
     }
 
+    /// <summary>启动录音时传给采集服务的配置（按麦克风 ID 精确匹配）。</summary>
+    private static RecordingConfig ConfigWithMic(string micId)
+        => It.Is<RecordingConfig>(c => c.MicId == micId);
+
     [Fact]
     public async Task StartRecording_Success()
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         var vm = CreateVm();
 
         // Act
@@ -185,22 +192,22 @@ public class RecordingViewModelTests
 
         // Assert
         Assert.Equal("录音中", vm.StatusText);
-        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), "id-1"), Times.Once);
+        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), ConfigWithMic("id-1")), Times.Once);
     }
 
     [Fact]
     public async Task StartRecording_UsesPassedDeviceId()
     {
-        // Arrange — 用户在设置窗口选中的 USB 麦克风 ID 应原样传给录音服务，而不是按名称二次解析
+        // Arrange — 用户在配置窗口选中的 USB 麦克风 ID 应原样传给录音服务，而不是按名称二次解析
         SetupMics(new[] { "内置麦克风", "USB 麦克风" }, new[] { "wasapi-builtin", "wasapi-usb" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         var vm = CreateVm(micName: "USB 麦克风", micId: "wasapi-usb");
 
         // Act
         await vm.StartRecordingAsync();
 
         // Assert
-        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), "wasapi-usb"), Times.Once);
+        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), ConfigWithMic("wasapi-usb")), Times.Once);
     }
 
     [Fact]
@@ -215,7 +222,35 @@ public class RecordingViewModelTests
 
         // Assert
         Assert.Equal("录音启动失败：未检测到可用麦克风", vm.StatusText);
-        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task StartRecording_SystemAudioOnly_DoesNotRequireMicrophone()
+    {
+        // Arrange — 无麦克风也应能录系统声音（不依赖采集端点）
+        SetupMics(Array.Empty<string>(), Array.Empty<string>());
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
+        var vm = CreateVm(source: AudioSourceKind.System);
+
+        // Act
+        await vm.StartRecordingAsync();
+
+        // Assert
+        Assert.Equal("录音中", vm.StatusText);
+        _mockAudio.Verify(x => x.StartRecording(It.IsAny<string>(),
+            It.Is<RecordingConfig>(c => c.Source == AudioSourceKind.System && c.NeedsMicrophone == false)), Times.Once);
+    }
+
+    [Fact]
+    public void SourceDisplayName_ReflectsConfiguredSource()
+    {
+        SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
+
+        Assert.Equal(AudioSourceKinds.ToDisplayName(AudioSourceKind.Microphone),
+            CreateVm(source: AudioSourceKind.Microphone).SourceDisplayName);
+        Assert.Equal(AudioSourceKinds.ToDisplayName(AudioSourceKind.Both),
+            CreateVm(source: AudioSourceKind.Both).SourceDisplayName);
     }
 
     [Fact]
@@ -223,7 +258,7 @@ public class RecordingViewModelTests
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(false);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(false);
         _mockAudio.Setup(x => x.LastError).Returns("WASAPI 采集启动失败: 设备被占用");
         var vm = CreateVm();
 
@@ -239,7 +274,7 @@ public class RecordingViewModelTests
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
         _mockApi.Setup(x => x.EndSessionAsync(It.IsAny<Guid>(), It.IsAny<int>())).Returns(Task.CompletedTask);
         var vm = CreateVm();
@@ -265,7 +300,7 @@ public class RecordingViewModelTests
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
         _mockUpload.Setup(x => x.UploadAudioAsync(_sessionId, It.IsAny<string>(), "audio.wav"))
             .ReturnsAsync(true);
@@ -292,7 +327,7 @@ public class RecordingViewModelTests
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockAudio.Setup(x => x.GetOutputPath()).Returns((string?)null);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
         _mockApi.Setup(x => x.EndSessionAsync(_sessionId, It.IsAny<int>())).Returns(Task.CompletedTask);
@@ -317,7 +352,7 @@ public class RecordingViewModelTests
     {
         // Arrange
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
-        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<string>())).Returns(true);
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
         _mockUpload.Setup(x => x.UploadAudioAsync(_sessionId, It.IsAny<string>(), "audio.wav"))
             .ReturnsAsync(false); // 直传失败，应入队兜底

@@ -1,51 +1,267 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ClassNote.Services;
 
 namespace ClassNote.Views;
 
 /// <summary>
-/// 应用设置对话框：LLM API 配置 + 定时记录默认麦克风，
-/// 持久化到本地设置文件（AppSettings）；支持一键测试 v1 接口连通性。
+/// 应用设置对话框，分为两个页签：
+///   · API 配置 —— LLM 供应商地址 / API Key / 模型（自动拉取下拉选择）/ 超时 / 连通性测试；
+///   · 录音设置 —— 声音来源（麦克风 / 系统声音 / 混合）与具体设备。
+/// 持久化到本地设置文件（AppSettings）。
 /// </summary>
 public partial class SettingsWindow : Window
 {
+    /// <summary>线程内共享的模型列表缓存：同一供应商不必每次打开设置都重新拉一遍。</summary>
+    private static string _cachedBaseUrl = "";
+    private static string _cachedApiKey = "";
+    private static IReadOnlyList<string> _cachedModels = Array.Empty<string>();
+
     private readonly string[] _micIds;
     private readonly string[] _micNames;
+    private readonly string[] _outputIds;
+    private readonly string[] _outputNames;
+
+    private readonly DispatcherTimer _autoFetchTimer;
+    private bool _modelsLoading;
+    private bool _suppressSourceChanged;
 
     public SettingsWindow()
     {
         InitializeComponent();
 
         var s = AppSettings.Instance.Snapshot();
-        ApiKeyBox.Text = s.LlmApiKey;
         BaseUrlBox.Text = s.LlmBaseUrl;
-        ModelBox.Text = s.LlmModel;
+        ApiKeyBox.Text = s.LlmApiKey;
+        ModelCombo.Text = s.LlmModel;
         TimeoutBox.Text = (s.LlmTimeoutSeconds > 0 ? s.LlmTimeoutSeconds : LlmService.DefaultTimeoutSeconds).ToString();
-        FallbackApiKeyBox.Text = s.LlmFallbackApiKey;
-        FallbackBaseUrlBox.Text = s.LlmFallbackBaseUrl;
 
-        // 定时记录默认麦克风：枚举真实输入设备（含"系统默认"占位项）
+        // 设备枚举：麦克风（采集端点）与播放设备（回环来源）各自带"系统默认"占位项
         var audio = new AudioService();
-        var names = audio.GetInputDevices().ToList();
-        var ids = audio.GetInputDeviceIds().ToList();
-        var items = new List<string> { "（系统默认）" };
-        items.AddRange(names);
-        _micNames = items.ToArray();
-        _micIds = new List<string> { "" }.Concat(ids).ToArray();
+        var micNames = audio.GetInputDevices().ToList();
+        _micNames = new[] { AudioDeviceSelection.SystemDefaultLabel }.Concat(micNames).ToArray();
+        _micIds = new[] { "" }.Concat(audio.GetInputDeviceIds()).ToArray();
+        MicCombo.ItemsSource = _micNames;
+        MicCombo.SelectedIndex = AudioDeviceSelection.ResolveIndex(
+            _micIds, _micNames, s.RecordingMicId, s.RecordingMicName);
 
-        ScheduleMicCombo.ItemsSource = _micNames;
-        // 当前保存的麦克风：优先按稳定 ID 反查，其次名称；查不到则默认项
-        var savedIdx = string.IsNullOrWhiteSpace(s.ScheduleMicId)
-            ? 0
-            : Math.Max(0, ids.IndexOf(s.ScheduleMicId) + 1);
-        if (savedIdx <= 0 && !string.IsNullOrWhiteSpace(s.ScheduleMicName))
-            savedIdx = Math.Max(0, names.IndexOf(s.ScheduleMicName) + 1);
-        ScheduleMicCombo.SelectedIndex = savedIdx;
+        var outputNames = audio.GetOutputDevices().ToList();
+        _outputNames = new[] { AudioDeviceSelection.SystemDefaultLabel }.Concat(outputNames).ToArray();
+        _outputIds = new[] { "" }.Concat(audio.GetOutputDeviceIds()).ToArray();
+        OutputCombo.ItemsSource = _outputNames;
+        OutputCombo.SelectedIndex = AudioDeviceSelection.ResolveIndex(
+            _outputIds, _outputNames, s.RecordingOutputDeviceId, s.RecordingOutputDeviceName);
 
-        if (names.Count == 0)
-            ScheduleMicHint.Text = "未检测到麦克风：定时触发时将因无设备而跳过本节。";
+        if (micNames.Count == 0)
+            MicHint.Text = "未检测到麦克风：使用麦克风来源时将无法开始录音。";
+
+        // MME 回退路径没有回环能力：提前说明，别让用户选完才发现录不到系统声音
+        if (audio.IsUsingMmeFallback)
+        {
+            OutputHint.Text = "当前音频子系统仅支持 MME 采集，无法录制系统声音；" +
+                              "使用「系统声音」来源将启动失败，请改用麦克风来源。";
+            SourceCombo.IsEnabled = false;
+        }
+
+        // 声音来源：只在需要时才让用户看到对应的设备选择（减少无效配置）
+        SourceCombo.ItemsSource = AudioSourceKinds.DisplayNames;
+        _suppressSourceChanged = true;
+        SourceCombo.SelectedIndex = (int)AudioSourceKinds.FromStorage(s.RecordingSource);
+        _suppressSourceChanged = false;
+        ApplySourceVisibility();
+
+        // 地址/Key 填好后自动拉取模型列表（防抖，避免边输入边打请求）
+        _autoFetchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _autoFetchTimer.Tick += async (_, _) =>
+        {
+            _autoFetchTimer.Stop();
+            await TryAutoFetchModelsAsync();
+        };
+
+        SeedModelCombo();
+        Loaded += (_, _) => ScheduleAutoFetch();
     }
+
+    /// <summary>当前选中的声音来源。</summary>
+    private AudioSourceKind SelectedSource
+        => (AudioSourceKind)Math.Max(0, SourceCombo.SelectedIndex);
+
+    // ── 模型列表 ─────────────────────────────────────────────
+
+    /// <summary>把缓存/已保存的模型填进下拉框（保证当前配置的模型一定在候选里）。</summary>
+    private void SeedModelCombo()
+    {
+        var models = new List<string>();
+        var saved = ModelCombo.Text?.Trim() ?? "";
+        if (IsCacheValid())
+            models.AddRange(_cachedModels);
+        if (!string.IsNullOrEmpty(saved) && !models.Contains(saved, StringComparer.OrdinalIgnoreCase))
+            models.Insert(0, saved);
+
+        ApplyModels(models.ToArray(), hint: null);
+    }
+
+    /// <summary>缓存是否对应当前的地址 + Key（Key 变了说明可能换了供应商）。</summary>
+    private bool IsCacheValid()
+        => _cachedModels.Count > 0
+           && string.Equals(_cachedBaseUrl, BaseUrlBox.Text.Trim(), StringComparison.OrdinalIgnoreCase)
+           && string.Equals(_cachedApiKey, ApiKeyBox.Text.Trim(), StringComparison.Ordinal);
+
+    private void ApplyModels(IReadOnlyList<string> models, string? hint)
+    {
+        var current = ModelCombo.Text?.Trim() ?? "";
+        ModelCombo.ItemsSource = models;
+
+        // 已保存的模型不在新列表里时保留用户的选择，不做静默改写
+        if (!string.IsNullOrEmpty(current))
+            ModelCombo.Text = current;
+        else if (models.Count > 0)
+            ModelCombo.Text = models[0];
+
+        if (hint != null)
+        {
+            ModelHint.Text = hint;
+            ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+        }
+        else if (models.Count > 0)
+        {
+            ModelHint.Text = $"已载入 {models.Count} 个模型候选；换供应商或换 Key 后可用右上角按钮重新获取。";
+            ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+        }
+    }
+
+    private void ScheduleAutoFetch()
+    {
+        if (IsCacheValid() || _modelsLoading)
+            return;
+        if (string.IsNullOrWhiteSpace(BaseUrlBox.Text) || string.IsNullOrWhiteSpace(ApiKeyBox.Text))
+            return;
+        _autoFetchTimer.Stop();
+        _autoFetchTimer.Start();
+    }
+
+    /// <summary>
+    /// 地址 + Key 都有值时自动拉取可用模型；只自动成功一次，之后靠"刷新模型列表"按钮，
+    /// 避免用户每次点开设置都打一次网络请求。
+    /// </summary>
+    private async Task TryAutoFetchModelsAsync()
+    {
+        if (_modelsLoading || IsCacheValid())
+            return;
+        if (string.IsNullOrWhiteSpace(BaseUrlBox.Text) || string.IsNullOrWhiteSpace(ApiKeyBox.Text))
+            return;
+        await FetchModelsAsync(announce: true);
+    }
+
+    private async Task FetchModelsAsync(bool announce)
+    {
+        if (_modelsLoading)
+            return;
+
+        _modelsLoading = true;
+        RefreshModelsButton.IsEnabled = false;
+        var previousHint = ModelHint.Text;
+        if (announce)
+        {
+            ModelHint.Text = "正在获取模型列表…";
+            ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+        }
+
+        try
+        {
+            var result = await new LlmService().ListModelsAsync(
+                apiKey: ApiKeyBox.Text.Trim(),
+                baseUrl: BaseUrlBox.Text.Trim());
+
+            if (result.IsOk)
+            {
+                var models = new List<string>(result.Models);
+                var current = ModelCombo.Text?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(current) && !models.Contains(current, StringComparer.OrdinalIgnoreCase))
+                    models.Insert(0, current);
+
+                _cachedBaseUrl = BaseUrlBox.Text.Trim();
+                _cachedApiKey = ApiKeyBox.Text.Trim();
+                _cachedModels = result.Models;
+
+                ApplyModels(models, result.Message);
+            }
+            else
+            {
+                // 拉取失败不打断用户：保留原候选（含已保存的模型名），只是提示原因
+                ModelHint.Text = result.Message + "；可继续手动输入模型名称。";
+                ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+                if (!announce)
+                    ModelHint.Text = previousHint;
+            }
+        }
+        catch (Exception ex)
+        {
+            ModelHint.Text = "获取模型列表失败：" + ex.Message + "；可继续手动输入模型名称。";
+            ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+        }
+        finally
+        {
+            _modelsLoading = false;
+            RefreshModelsButton.IsEnabled = true;
+        }
+    }
+
+    private async void RefreshModelsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(BaseUrlBox.Text) || string.IsNullOrWhiteSpace(ApiKeyBox.Text))
+        {
+            ModelHint.Text = "请先填写 API 基础地址与 API Key。";
+            ModelHint.Foreground = (Brush)FindResource("TextHintBrush");
+            return;
+        }
+        await FetchModelsAsync(announce: true);
+    }
+
+    private void BaseUrlBox_LostFocus(object sender, RoutedEventArgs e) => ScheduleAutoFetch();
+
+    private void ApiKeyBox_LostFocus(object sender, RoutedEventArgs e) => ScheduleAutoFetch();
+
+    // ── 录音设置 ─────────────────────────────────────────────
+
+    private void SourceCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressSourceChanged)
+            return;
+        ApplySourceVisibility();
+    }
+
+    /// <summary>按选中的来源显示/隐藏对应设备选择，并说明定时记录会用到的来源。</summary>
+    private void ApplySourceVisibility()
+    {
+        var source = SelectedSource;
+        bool needsMic = source is AudioSourceKind.Microphone or AudioSourceKind.Both;
+        bool needsSystem = source is AudioSourceKind.System or AudioSourceKind.Both;
+
+        MicSection.Visibility = needsMic ? Visibility.Visible : Visibility.Collapsed;
+        SystemSection.Visibility = needsSystem ? Visibility.Visible : Visibility.Collapsed;
+
+        string sourceText = AudioSourceKinds.ToDisplayName(source);
+        ScheduleSourceHint.Text =
+            $"定时记录将使用当前声音来源（{sourceText}）与上面的设备选择。定时触发时没有弹窗选择机会，" +
+            "请在此固定设备；设备不可用时麦克风回退系统默认设备。";
+
+        RecordingTipText.Text = source switch
+        {
+            AudioSourceKind.System =>
+                "仅采集系统声音：麦克风不会被录音，适合在线课程 / 视频。注意区分耳机与扬声器，选错设备会录成静音。",
+            AudioSourceKind.Both =>
+                "混合录音会把麦克风与系统声音合成为一路（各占一半），适合既要现场人声又要设备声音的课堂；" +
+                "同时占用两路采集，CPU 与内存略高。",
+            _ =>
+                "仅采集麦克风：教室现场人声。需要同时录下设备外放的声音时，请改选「系统声音」或「麦克风 + 系统声音」。",
+        };
+        RecordingTipText.Text += " 录音全程在本地完成，不会上传到任何服务器。";
+    }
+
+    // ── 测试连接 ─────────────────────────────────────────────
 
     private async void TestButton_Click(object sender, RoutedEventArgs e)
     {
@@ -73,6 +289,8 @@ public partial class SettingsWindow : Window
         }
     }
 
+    // ── 保存 ─────────────────────────────────────────────────
+
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         int timeout = LlmService.DefaultTimeoutSeconds;
@@ -87,24 +305,32 @@ public partial class SettingsWindow : Window
             }
         }
 
-        var micIdx = ScheduleMicCombo.SelectedIndex;
+        // 路径类输入只接受下拉框里存在的设备，绝不把界面上的任意文本当设备 ID 用
         string micId = "", micName = "";
-        if (micIdx > 0 && micIdx < _micIds.Length)
+        if (MicCombo.SelectedIndex > 0 && MicCombo.SelectedIndex < _micIds.Length)
         {
-            micId = _micIds[micIdx];
-            micName = _micNames[micIdx];
+            micId = _micIds[MicCombo.SelectedIndex];
+            micName = _micNames[MicCombo.SelectedIndex];
+        }
+
+        string outputId = "", outputName = "";
+        if (OutputCombo.SelectedIndex > 0 && OutputCombo.SelectedIndex < _outputIds.Length)
+        {
+            outputId = _outputIds[OutputCombo.SelectedIndex];
+            outputName = _outputNames[OutputCombo.SelectedIndex];
         }
 
         AppSettings.Instance.Update(s =>
         {
             s.LlmApiKey = ApiKeyBox.Text.Trim();
             s.LlmBaseUrl = BaseUrlBox.Text.Trim();
-            s.LlmModel = ModelBox.Text.Trim();
+            s.LlmModel = (ModelCombo.Text ?? "").Trim();
             s.LlmTimeoutSeconds = timeout;
-            s.LlmFallbackApiKey = FallbackApiKeyBox.Text.Trim();
-            s.LlmFallbackBaseUrl = FallbackBaseUrlBox.Text.Trim();
-            s.ScheduleMicId = micId;
-            s.ScheduleMicName = micName;
+            s.RecordingSource = AudioSourceKinds.ToStorage(SelectedSource);
+            s.RecordingMicId = micId;
+            s.RecordingMicName = micName;
+            s.RecordingOutputDeviceId = outputId;
+            s.RecordingOutputDeviceName = outputName;
         });
         DialogResult = true;
     }

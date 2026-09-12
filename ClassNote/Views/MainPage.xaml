@@ -12,6 +12,69 @@
         <converters:StatusColorConverter x:Key="StatusColorConverter" />
         <converters:StatusDisplayConverter x:Key="StatusDisplayConverter" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- 右键菜单配色：白底 + 圆角 + 主色悬停，与页面其它弹出层保持一致 -->
+        <SolidColorBrush x:Key="SessionMenuHoverBrush" Color="#EEF1FF" />
+
+        <Style x:Key="SessionMenuItemStyle" TargetType="MenuItem">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="7" Margin="4,1"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter ContentSource="Header" Margin="8,0"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SessionMenuHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 单条记录的右键菜单：查看笔记 / 导出 PDF / 删除。
+             ContextMenu 是 Popup，不参与视觉树继承，DataContext 拿不到被右键的那一行；
+             由 MainPage.ContextMenuOpening 在弹出前按行写入 DataContext，
+             菜单项再通过逻辑树继承拿到记录。自带键盘可达性：右键或 Shift+F10 唤出，
+             方向键选择，Enter 执行。 -->
+        <ContextMenu x:Key="SessionContextMenu">
+            <ContextMenu.Template>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="#FFFFFF" BorderBrush="{StaticResource BorderBrush}"
+                            BorderThickness="1" CornerRadius="11" Padding="0,4">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Direction="270"
+                                              Opacity="0.14" Color="{StaticResource TextPrimaryColor}" />
+                        </Border.Effect>
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </ContextMenu.Template>
+            <MenuItem Header="查看笔记" Style="{StaticResource SessionMenuItemStyle}"
+                      Click="ContextViewNote_Click" />
+            <Separator Margin="10,4" Background="{StaticResource BorderBrush}" />
+            <MenuItem Header="导出 PDF" Style="{StaticResource SessionMenuItemStyle}"
+                      Click="ContextExportPdf_Click" />
+            <MenuItem Header="删除" Style="{StaticResource SessionMenuItemStyle}"
+                      Foreground="{StaticResource DangerBrush}" Click="ContextDelete_Click" />
+        </ContextMenu>
+
+        <!-- 每行套用右键菜单（ContextMenu 是 FrameworkElement 的属性，每个 ListViewItem 各持一份） -->
+        <Style x:Key="SessionRowStyle" TargetType="ListViewItem">
+            <Setter Property="ContextMenu" Value="{StaticResource SessionContextMenu}" />
+            <Setter Property="ToolTip" Value="双击查看笔记 · 右键可导出 PDF 或删除" />
+        </Style>
     </Page.Resources>
 
     <Grid>
@@ -27,10 +90,18 @@
         </Grid>
 
         <DockPanel Margin="26,20,26,26">
-            <!-- 顶部品牌栏 -->
+            <!-- 顶部品牌栏 + 操作区（文字按钮，替代原来的图标按钮）
+                 用 3 列 Grid 而非 DockPanel：右侧操作区拿到自然宽度后不再被中间内容挤压，
+                 文字按钮的文案因此不会被截断。 -->
             <Border DockPanel.Dock="Top" Margin="2,0,2,18">
-                <DockPanel>
-                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                         <Border Width="42" Height="42" CornerRadius="12"
                                 Background="{StaticResource PrimaryGradientBrush}" VerticalAlignment="Center">
                             <TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="18"
@@ -42,10 +113,13 @@
                                        FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>
-                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- LLM 服务状态（每 30 秒自动检测 v1 接口；点击打开设置） -->
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- LLM 服务状态（每 30 秒自动检测 v1 接口；点击打开设置）。
+                             限宽 + 省略号：状态文案变长时不会把右侧按钮挤出可视区。 -->
                         <Border x:Name="LlmHealthBadge" Background="#F4F5F8" CornerRadius="12"
-                                Padding="10,5" Margin="0,0,10,0" VerticalAlignment="Center"
+                                Padding="10,5" Margin="0,0,14,0" VerticalAlignment="Center"
+                                MaxWidth="170"
                                 MouseLeftButtonUp="LlmHealthBadge_MouseLeftButtonUp"
                                 ToolTip="LLM 服务状态（每 30 秒自动检测 v1 接口）；点击可打开设置"
                                 Cursor="Hand">
@@ -53,184 +127,207 @@
                                 <Ellipse x:Name="LlmHealthDot" Width="8" Height="8" Fill="#9AA3B2"
                                          VerticalAlignment="Center" Margin="0,0,6,0" />
                                 <TextBlock x:Name="LlmHealthText" Text="LLM 检测中…" FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
                                            Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
-                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="刷新列表"
-                                Command="{Binding RefreshCommand}">
-                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
-                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                        <!-- 主操作：开始记录（课程在配置窗里选择/可自定义）。
+                             文字按钮统一给定 MinWidth：WPF 给按钮分配的宽度可能小于其
+                             DesiredSize，不设下限时中文文案会被左右截断。 -->
+                        <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Padding="18,0"
+                                MinWidth="104"
+                                Click="StartButton_Click"
+                                ToolTip="开始录音与自动截屏；课程、标题与麦克风在弹窗中确认">
+                            <TextBlock Text="开始记录" FontSize="14" />
                         </Button>
-                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="定时记录 · 每周课表（到点自动录音）"
-                                Click="ScheduleButton_Click" Margin="8,0,0,0">
-                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
-                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Button>
-                        <Button Style="{StaticResource IconButtonStyle}" ToolTip="设置（LLM API / 定时默认麦克风）"
-                                Click="SettingsButton_Click" Margin="8,0,0,0">
-                            <TextBlock Text="&#xE713;" FontFamily="Segoe MDL2 Assets, Segoe UI Symbol, Segoe UI"
-                                       FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Button>
+
+                        <Button Content="刷新列表" Style="{StaticResource GhostButtonStyle}" Height="38"
+                                MinWidth="92"
+                                Margin="10,0,0,0" Command="{Binding RefreshCommand}"
+                                ToolTip="重新读取本地记录列表" />
+                        <Button Content="定时记录" Style="{StaticResource GhostButtonStyle}" Height="38"
+                                MinWidth="92"
+                                Margin="8,0,0,0" Click="ScheduleButton_Click"
+                                ToolTip="每周课表：到点自动开始录音" />
+                        <Button Content="设置" Style="{StaticResource GhostButtonStyle}" Height="38"
+                                MinWidth="68"
+                                Margin="8,0,0,0" Click="SettingsButton_Click"
+                                ToolTip="LLM API / 定时默认麦克风" />
                     </StackPanel>
-                </DockPanel>
+                </Grid>
             </Border>
 
-            <!-- 主体两栏 -->
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="262" />
-                    <ColumnDefinition Width="20" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+            <!-- 错误提示（加载失败 / 启动记录失败） -->
+            <Border DockPanel.Dock="Bottom" Background="{StaticResource DangerLightBrush}" CornerRadius="8"
+                    Padding="12,8" Margin="0,12,0,0"
+                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
+                           FontSize="12" TextWrapping="Wrap" />
+            </Border>
 
-                <!-- 左：课程选择 -->
-                <Border Grid.Column="0" Style="{StaticResource CardBorderStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+            <!-- 最近记录（整宽卡片：左侧课程选择模块已移除，课程改在「开始记录」弹窗中确认） -->
+            <Border Style="{StaticResource CardBorderStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-                        <DockPanel Grid.Row="0" Margin="0,0,0,14">
-                            <TextBlock Text="选择课程" FontSize="16" FontWeight="Bold" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                            <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
-                                    Padding="9,2" DockPanel.Dock="Right" VerticalAlignment="Center">
-                                <TextBlock Text="9 门课程" FontSize="11" Foreground="{StaticResource PrimaryDarkBrush}" />
-                            </Border>
-                        </DockPanel>
+                    <!-- 标题行 + 操作行：用 Grid 三段式布局，左侧提示文字被压窄时自动省略，
+                         不会像 DockPanel 那样被右侧控件覆盖。 -->
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
 
-                        <ListBox Grid.Row="1"
-                                 ItemsSource="{Binding Courses}"
-                                 SelectedItem="{Binding SelectedCourse}"
-                                 BorderThickness="0" Background="Transparent" />
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="最近记录" FontSize="16" FontWeight="Bold" />
+                            <TextBlock Text="双击查看笔记 · 右键导出或删除" FontSize="11"
+                                       Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
 
-                        <StackPanel Grid.Row="2">
-                            <Button Style="{StaticResource PrimaryButtonStyle}" Height="46" Margin="0,4,0,0"
-                                    Click="StartButton_Click" ToolTip="开始录音与自动截屏">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE720;" FontFamily="Segoe MDL2 Assets" FontSize="16"
-                                               Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="开始记录" FontSize="14" />
-                                </StackPanel>
-                            </Button>
-                            <TextBlock Text="录音开始后将自动截屏并生成 AI 笔记" FontSize="11"
-                                       Foreground="{StaticResource TextHintBrush}" HorizontalAlignment="Center"
-                                       Margin="0,10,0,0" />
-                            <Border Background="{StaticResource DangerLightBrush}" CornerRadius="8"
-                                    Padding="10,8" Margin="0,10,0,0"
-                                    Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
-                                           FontSize="12" TextWrapping="Wrap" TextAlignment="Center" />
-                            </Border>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Margin="16,0,0,0">
+                            <CheckBox Content="全选" IsThreeState="True" Click="SelectAllCheckBox_Click"
+                                      IsChecked="{Binding SelectAll, Mode=OneWay}"
+                                      FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                      VerticalAlignment="Center"
+                                      ToolTip="全选 / 取消全选当前筛选出的记录" />
+                            <TextBlock Text="{Binding SelectedCount, StringFormat=已选 {0} 项}" FontSize="12"
+                                       Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                                    Margin="14,0,0,0">
+                            <Button x:Name="ExportPdfButton" Style="{StaticResource PrimaryGhostButtonStyle}" Height="32"
+                                    MinWidth="108"
+                                    Content="批量导出 PDF" Click="ExportPdfButton_Click"
+                                    IsEnabled="{Binding HasSelection}"
+                                    ToolTip="将勾选的课堂笔记导出为 PDF 文件（尚未生成笔记的记录将自动跳过）" />
+                            <Button x:Name="DeleteSelectedButton" Style="{StaticResource DangerGhostButtonStyle}" Height="32"
+                                    MinWidth="64"
+                                    Content="删除" Click="DeleteSelectedButton_Click" Margin="8,0,0,0"
+                                    IsEnabled="{Binding HasSelection}"
+                                    ToolTip="删除勾选的记录（录音、截图与笔记将一并永久移除）" />
                         </StackPanel>
                     </Grid>
-                </Border>
 
-                <!-- 右：最近记录 -->
-                <Border Grid.Column="2" Style="{StaticResource CardBorderStyle}">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
+                    <!-- 课程筛选：默认「全部课程」，按时间倒序（列表本身最近在前） -->
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                        <TextBlock Text="科目" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <ComboBox x:Name="CourseFilterCombo" Width="150" Height="34" FontSize="13"
+                                  ItemsSource="{Binding CourseFilters}"
+                                  SelectedItem="{Binding CourseFilter, Mode=TwoWay}"
+                                  ToolTip="按科目筛选最近记录；默认显示全部课程，按最近时间排序" />
+                        <TextBlock Text="{Binding VisibleCount, StringFormat=共 {0} 条}" FontSize="12"
+                                   Foreground="{StaticResource TextHintBrush}" VerticalAlignment="Center"
+                                   Margin="12,0,0,0" />
+                        <TextBlock Text="已按科目筛选" FontSize="11" Foreground="{StaticResource PrimaryDarkBrush}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0"
+                                   Visibility="{Binding IsFiltered, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
 
-                        <DockPanel Grid.Row="0" Margin="0,0,0,12">
-                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="最近记录" FontSize="16" FontWeight="Bold" />
-                                <TextBlock Text="双击记录可查看笔记" FontSize="11"
-                                           Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
+                    <Grid Grid.Row="2">
+                        <ListView x:Name="SessionList"
+                                  ItemsSource="{Binding FilteredSessions}"
+                                  ItemContainerStyle="{StaticResource SessionRowStyle}"
+                                  ContextMenuOpening="SessionList_ContextMenuOpening"
+                                  MouseDoubleClick="SessionList_MouseDoubleClick"
+                                  BorderThickness="0" Background="Transparent">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="36" />
+                                            <ColumnDefinition Width="104" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="176" />
+                                            <ColumnDefinition Width="112" />
+                                        </Grid.ColumnDefinitions>
 
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                <CheckBox Content="全选" IsThreeState="True" Click="SelectAllCheckBox_Click"
-                                          IsChecked="{Binding SelectAll, Mode=OneWay}"
-                                          FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                          VerticalAlignment="Center"
-                                          ToolTip="全选 / 取消全选当前列表中的记录" />
-                                <TextBlock Text="{Binding SelectedCount, StringFormat=已选 {0} 项}" FontSize="12"
-                                           Foreground="{StaticResource TextHintBrush}" Margin="10,0,0,0"
-                                           VerticalAlignment="Center" />
-                                <Button x:Name="ExportPdfButton" Style="{StaticResource PrimaryGhostButtonStyle}" Height="32"
-                                        Content="批量导出 PDF" Click="ExportPdfButton_Click" Margin="14,0,0,0"
-                                        IsEnabled="{Binding HasSelection}"
-                                        ToolTip="将选中的课堂笔记导出为 PDF 文件（尚未生成笔记的记录将自动跳过）" />
-                                <Button x:Name="DeleteSelectedButton" Style="{StaticResource DangerGhostButtonStyle}" Height="32"
-                                        Content="删除" Click="DeleteSelectedButton_Click" Margin="8,0,0,0"
-                                        IsEnabled="{Binding HasSelection}"
-                                        ToolTip="删除选中的记录（录音、截图与笔记将一并永久移除）" />
-                            </StackPanel>
-                        </DockPanel>
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip="勾选后可用于批量导出 PDF 或删除" />
 
-                        <Grid Grid.Row="1">
-                            <ListView ItemsSource="{Binding RecentSessions}"
-                                      MouseDoubleClick="SessionList_MouseDoubleClick"
-                                      BorderThickness="0" Background="Transparent">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="36" />
-                                                <ColumnDefinition Width="104" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="148" />
-                                                <ColumnDefinition Width="112" />
-                                            </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="1" Background="{StaticResource HoverBrush}" CornerRadius="6"
+                                                Padding="9,3" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                            <TextBlock Text="{Binding Course}" FontSize="12"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </Border>
 
-                                            <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}"
-                                                      VerticalAlignment="Center"
-                                                      ToolTip="勾选后可用于批量导出 PDF 或删除" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0" />
 
-                                            <Border Grid.Column="1" Background="{StaticResource HoverBrush}" CornerRadius="6"
-                                                    Padding="9,3" VerticalAlignment="Center" HorizontalAlignment="Left">
-                                                <TextBlock Text="{Binding Course}" FontSize="12"
-                                                           Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Border>
+                                        <!-- 时间戳带星期几：2026-08-30 周日 23:34 -->
+                                        <TextBlock Grid.Column="3" FontSize="12"
+                                                   Foreground="{StaticResource TextHintBrush}"
+                                                   VerticalAlignment="Center">
+                                            <Run Text="{Binding StartTime, Mode=OneWay, StringFormat={}{0:yyyy-MM-dd HH:mm}}" />
+                                            <Run Text="{Binding WeekdayText, Mode=OneWay}" />
+                                        </TextBlock>
 
-                                            <TextBlock Grid.Column="2" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                                       Margin="0,0,8,0" />
+                                        <Border Grid.Column="4" Background="#F4F5F8" CornerRadius="12" Padding="11,3"
+                                                VerticalAlignment="Center" HorizontalAlignment="Left">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="8" Height="8"
+                                                         Fill="{Binding Status, Converter={StaticResource StatusColorConverter}}"
+                                                         VerticalAlignment="Center" Margin="0,0,6,0" />
+                                                <TextBlock Text="{Binding Status, Converter={StaticResource StatusDisplayConverter}}"
+                                                           FontSize="12" VerticalAlignment="Center"
+                                                           Foreground="{Binding Status, Converter={StaticResource StatusColorConverter}}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
 
-                                            <TextBlock Grid.Column="3" Text="{Binding StartTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
-                                                       FontSize="12" Foreground="{StaticResource TextHintBrush}"
-                                                       VerticalAlignment="Center" />
+                        <!-- 空状态：一条记录都没有 -->
+                        <TextBlock Text="暂无课堂记录，点击右上角「开始记录」创建第一条"
+                                   FontSize="12" Foreground="{StaticResource TextHintBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasAnySessions}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
-                                            <Border Grid.Column="4" Background="#F4F5F8" CornerRadius="12" Padding="11,3"
-                                                    VerticalAlignment="Center" HorizontalAlignment="Left">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Ellipse Width="8" Height="8"
-                                                             Fill="{Binding Status, Converter={StaticResource StatusColorConverter}}"
-                                                             VerticalAlignment="Center" Margin="0,0,6,0" />
-                                                    <TextBlock Text="{Binding Status, Converter={StaticResource StatusDisplayConverter}}"
-                                                               FontSize="12" VerticalAlignment="Center"
-                                                               Foreground="{Binding Status, Converter={StaticResource StatusColorConverter}}" />
-                                                </StackPanel>
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
-
-                            <!-- 空状态 -->
-                            <TextBlock Text="暂无课堂记录，点击「开始记录」创建第一条"
-                                       FontSize="12" Foreground="{StaticResource TextHintBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding RecentSessions.Count}" Value="0">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </Grid>
+                        <!-- 空状态：有记录但被科目筛选排除 -->
+                        <TextBlock Text="当前科目下暂无记录，可在上方切换「全部课程」"
+                                   FontSize="12" Foreground="{StaticResource TextHintBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding HasAnySessions}" Value="True" />
+                                                <Condition Binding="{Binding VisibleCount}" Value="0" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </Grid>
-                </Border>
-            </Grid>
+                </Grid>
+            </Border>
         </DockPanel>
     </Grid>
 </Page>

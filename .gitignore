@@ -17,5 +17,9 @@ TestResults/
 # SenseVoice 模型二进制资产（约 230MB，非源码，不入库）
 ClassNote/Models/sensevoice/
 
+# UI 渲染工具的原始截图落盘目录（目录名由工作区路径拼接而来，属临时产物；
+# 精选图已整理进 docs/ui-renders/，不入库）
+*.ui-captures/
+
 # 本地 NuGet 配置（含镜像源，按需自建）
 # ClassNote/NuGet.config

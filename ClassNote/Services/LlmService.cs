@@ -16,6 +16,9 @@ public interface ILlmService
 
     /// <summary>检查 OpenAI 兼容 API（v1 接口）健康状态（GET /v1/models）。</summary>
     Task<LlmHealthResult> CheckHealthAsync(string? apiKey = null, string? baseUrl = null);
+
+    /// <summary>拉取该 API 供应商的可用模型列表（GET /v1/models），供设置界面下拉选择。</summary>
+    Task<LlmModelsResult> ListModelsAsync(string? apiKey = null, string? baseUrl = null);
 }
 
 /// <summary>LLM 服务健康检查结果。</summary>
@@ -24,6 +27,12 @@ public interface ILlmService
 /// <param name="IsConfigured">是否已配置 API Key（未配置时网络检查会跳过）。</param>
 public sealed record LlmHealthResult(bool IsOk, string Message, bool IsConfigured = true);
 
+/// <summary>模型列表拉取结果。</summary>
+/// <param name="Models">可用模型 ID（已去重排序）；失败时为空。</param>
+/// <param name="Message">面向用户的说明文字（成功时为"共 N 个模型"）。</param>
+/// <param name="IsOk">是否成功取得模型列表。</param>
+public sealed record LlmModelsResult(IReadOnlyList<string> Models, string Message, bool IsOk);
+
 public sealed class LlmService : ILlmService
 {
     /// <summary>默认请求超时（秒）：本地模型推理慢，默认 30 分钟。</summary>
@@ -31,6 +40,15 @@ public sealed class LlmService : ILlmService
 
     /// <summary>健康检查超时（秒）。</summary>
     private const int HealthCheckTimeoutSeconds = 10;
+
+    /// <summary>模型列表拉取超时（秒）：本地推理服务的 /v1/models 偶尔较慢，给得比健康检查宽裕。</summary>
+    private const int ModelListTimeoutSeconds = 15;
+
+    /// <summary>模型下拉列表的条数上限（供应商有时返回数百个，超出部分不铺进下拉框）。</summary>
+    public const int MaxModelCount = 300;
+
+    /// <summary>未配置基础地址时的默认值。</summary>
+    private const string DefaultBaseUrl = "https://api.deepseek.com";
 
     private const string NoteSystemPrompt =
         "你是一名资深助教，负责把课堂录音转写和课件截图 OCR 内容整理成一份结构清晰、重点突出的课堂笔记。请用 Markdown 输出。\n\n" +
@@ -58,13 +76,9 @@ public sealed class LlmService : ILlmService
         var s = AppSettings.Instance.Snapshot();
         apiKey ??= s.LlmApiKey;
         if (string.IsNullOrWhiteSpace(apiKey))
-            return new LlmHealthResult(false, "未配置 API Key，无法检测 LLM 服务", IsConfigured: false);
+            return new LlmHealthResult(false, "未配置 API Key", IsConfigured: false);
 
-        var resolvedBase = string.IsNullOrWhiteSpace(baseUrl) ? s.LlmBaseUrl : baseUrl;
-        resolvedBase = string.IsNullOrWhiteSpace(resolvedBase) ? "https://api.deepseek.com" : resolvedBase.TrimEnd('/');
-        var endpoint = resolvedBase.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
-            ? resolvedBase + "/models"
-            : resolvedBase + "/v1/models";
+        var endpoint = BuildModelsEndpoint(string.IsNullOrWhiteSpace(baseUrl) ? s.LlmBaseUrl : baseUrl);
 
         using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(HealthCheckTimeoutSeconds) };
         try
@@ -78,12 +92,111 @@ public sealed class LlmService : ILlmService
         }
         catch (TaskCanceledException)
         {
-            return new LlmHealthResult(false, $"连接超时（{HealthCheckTimeoutSeconds} 秒无响应）");
+            return new LlmHealthResult(false, $"连接超时（{HealthCheckTimeoutSeconds}s）");
         }
         catch (Exception ex) when (ex is HttpRequestException or System.Net.Sockets.SocketException)
         {
             return new LlmHealthResult(false, "服务不可达：" + ShortError(ex.Message));
         }
+    }
+
+    /// <summary>
+    /// 拉取该供应商的可用模型（GET {base}/v1/models）。填好地址与 Key 后由设置界面调用，
+    /// 把"模型名称"从手输改为下拉选择。
+    /// </summary>
+    public async Task<LlmModelsResult> ListModelsAsync(string? apiKey = null, string? baseUrl = null)
+    {
+        var s = AppSettings.Instance.Snapshot();
+        var key = string.IsNullOrWhiteSpace(apiKey) ? s.LlmApiKey : apiKey;
+        if (string.IsNullOrWhiteSpace(key))
+            return new LlmModelsResult(Array.Empty<string>(), "请先填写 API Key", IsOk: false);
+
+        var resolvedBase = string.IsNullOrWhiteSpace(baseUrl) ? s.LlmBaseUrl : baseUrl;
+        if (string.IsNullOrWhiteSpace(resolvedBase))
+            return new LlmModelsResult(Array.Empty<string>(), "请先填写 API 基础地址", IsOk: false);
+
+        var endpoint = BuildModelsEndpoint(resolvedBase);
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(ModelListTimeoutSeconds) };
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            request.Headers.TryAddWithoutValidation("Authorization", "Bearer " + key);
+            using var response = await client.SendAsync(request);
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                int status = (int)response.StatusCode;
+                string hint = status switch
+                {
+                    401 or 403 => "API Key 无效或无权访问该地址",
+                    404 => "该地址没有 /v1/models 接口",
+                    429 => "请求过于频繁，请稍后再试",
+                    _ => "供应商返回 HTTP " + status,
+                };
+                return new LlmModelsResult(Array.Empty<string>(), $"获取模型列表失败：{hint}", IsOk: false);
+            }
+
+            var models = ParseModelIds(body);
+            if (models.Count == 0)
+                return new LlmModelsResult(models, "该地址未返回任何模型，请手动填写模型名称", IsOk: false);
+
+            IReadOnlyList<string> shown = models.Count > MaxModelCount
+                ? models.Take(MaxModelCount).ToList()
+                : models;
+            var suffix = models.Count > MaxModelCount ? $"（仅列出前 {MaxModelCount} 个）" : "";
+            return new LlmModelsResult(shown, $"已获取 {models.Count} 个可用模型{suffix}", IsOk: true);
+        }
+        catch (TaskCanceledException)
+        {
+            return new LlmModelsResult(Array.Empty<string>(),
+                $"获取模型列表超时（{ModelListTimeoutSeconds}s）", IsOk: false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or System.Net.Sockets.SocketException)
+        {
+            return new LlmModelsResult(Array.Empty<string>(),
+                "服务不可达：" + ShortError(ex.Message), IsOk: false);
+        }
+    }
+
+    /// <summary>
+    /// 解析 OpenAI 兼容的 /v1/models 响应，取出模型 ID（去重 + 不区分大小写排序）。
+    /// 单独抽出来是为了能脱离网络做单元测试。
+    /// </summary>
+    public static List<string> ParseModelIds(string? json)
+    {
+        var models = new List<string>();
+        if (string.IsNullOrWhiteSpace(json))
+            return models;
+        try
+        {
+            var parsed = JsonConvert.DeserializeObject<ModelListResponse>(json);
+            if (parsed?.Data == null)
+                return models;
+            foreach (var item in parsed.Data)
+            {
+                var id = item?.Id?.Trim();
+                if (!string.IsNullOrEmpty(id))
+                    models.Add(id);
+            }
+        }
+        catch
+        {
+            return new List<string>(); // 非 JSON / 结构不符：按"没有可用模型"处理
+        }
+        return models
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>拼 /v1/models 端点：地址已带 /v1 时不重复追加。</summary>
+    private static string BuildModelsEndpoint(string? baseUrl)
+    {
+        var resolved = string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl.Trim().TrimEnd('/');
+        return resolved.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+            ? resolved + "/models"
+            : resolved + "/v1/models";
     }
 
     private (string Key, string BaseUrl, string Model) GetPrimaryConfig()
@@ -92,43 +205,11 @@ public sealed class LlmService : ILlmService
         return (s.LlmApiKey, s.LlmBaseUrl, s.LlmModel);
     }
 
-    /// <summary>
-    /// 备用配置（可选）：仅当备用 Key 与备用地址都非空时才生效；模型沿用主配置。
-    /// </summary>
-    private (string? Key, string? BaseUrl, string Model) GetFallbackConfig()
-    {
-        var s = AppSettings.Instance.Snapshot();
-        return (string.IsNullOrWhiteSpace(s.LlmFallbackApiKey) ? null : s.LlmFallbackApiKey,
-                string.IsNullOrWhiteSpace(s.LlmFallbackBaseUrl) ? null : s.LlmFallbackBaseUrl,
-                s.LlmModel);
-    }
-
-    /// <summary>
-    /// 先走主配置；主配置失败（ChatAsync 内部已按 429/5xx/网络异常重试后仍失败）时，
-    /// 若配置了备用 Key/地址则再尝试一次，仍失败则抛出主配置错误（更贴近根因）。
-    /// </summary>
+    /// <summary>生成笔记：主配置一次调用（内部已按 429/5xx/网络异常指数退避重试）。</summary>
     private async Task<string> ChatWithFallbackAsync(string system, string user)
     {
         var (key, baseUrl, model) = GetPrimaryConfig();
-        try
-        {
-            return await ChatAsync(key, baseUrl, model, system, user);
-        }
-        catch (Exception primaryEx)
-        {
-            var (fbKey, fbBaseUrl, fbModel) = GetFallbackConfig();
-            if (fbKey == null || fbBaseUrl == null)
-                throw; // 无备用配置
-
-            try
-            {
-                return await ChatAsync(fbKey, fbBaseUrl, fbModel, system, user);
-            }
-            catch
-            {
-                throw primaryEx;
-            }
-        }
+        return await ChatAsync(key, baseUrl, model, system, user);
     }
 
     private async Task<string> ChatAsync(string apiKey, string baseUrl, string model,
@@ -137,7 +218,7 @@ public sealed class LlmService : ILlmService
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("尚未配置 LLM API Key，请在「设置」中配置。");
 
-        baseUrl = string.IsNullOrWhiteSpace(baseUrl) ? "https://api.deepseek.com" : baseUrl.TrimEnd('/');
+        baseUrl = string.IsNullOrWhiteSpace(baseUrl) ? DefaultBaseUrl : baseUrl.TrimEnd('/');
         model = string.IsNullOrWhiteSpace(model) ? "deepseek-chat" : model;
 
         var endpoint = baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
@@ -255,6 +336,19 @@ public sealed class LlmService : ILlmService
     {
         [JsonProperty("choices")]
         public List<Choice>? Choices { get; set; }
+    }
+
+    /// <summary>GET /v1/models 的响应体（OpenAI 兼容：{"data":[{"id":"..."}]}）。</summary>
+    private sealed class ModelListResponse
+    {
+        [JsonProperty("data")]
+        public List<ModelEntry>? Data { get; set; }
+    }
+
+    private sealed class ModelEntry
+    {
+        [JsonProperty("id")]
+        public string? Id { get; set; }
     }
 
     private sealed class Choice

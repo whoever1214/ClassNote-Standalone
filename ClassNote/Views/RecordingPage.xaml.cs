@@ -26,7 +26,7 @@ public partial class RecordingPage : Page
     /// <summary>当前是否处于录音中（调度器用它判断是否已在录音）。</summary>
     public bool IsRecording => _viewModel.StatusText == "录音中";
 
-    public RecordingPage(Guid sessionId, string course, string? micName = null, string? micId = null,
+    public RecordingPage(Guid sessionId, string course, RecordingConfig? config = null,
         DateTime? autoStopAt = null)
     {
         InitializeComponent();
@@ -48,10 +48,11 @@ public partial class RecordingPage : Page
             new AudioService(),
             new ScreenshotService(),
             new UploadService("", api),
-            micName,
-            micId
+            config
         );
         DataContext = _viewModel;
+
+        SourceLabel.Text = "声音来源：" + _viewModel.SourceDisplayName;
 
         _uiTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         // 平滑呼吸闪烁：透明度在 1 ↔ 0.22 之间切换（替代原先生硬的红↔透明切换）

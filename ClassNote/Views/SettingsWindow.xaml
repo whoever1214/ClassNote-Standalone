@@ -1,8 +1,8 @@
 <Window x:Class="ClassNote.Views.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="设置 - LLM API 配置"
-        Height="540" Width="560"
+        Title="设置"
+        Height="620" Width="600"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
@@ -10,85 +10,201 @@
         Background="{StaticResource BgBrush}"
         FontFamily="{StaticResource AppFont}"
         UseLayoutRounding="True">
-    <Grid Margin="26,22,26,24">
+    <Window.Resources>
+        <!-- 设置页签：下划线式（现代风），选中项用主色下划线 + 加粗文字 -->
+        <Style x:Key="SettingsTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ContentPresenter Grid.Row="0" ContentSource="Header"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="2,0,2,6" />
+                            <Border x:Name="Underline" Grid.Row="1" Height="3" CornerRadius="1.5"
+                                    Background="Transparent" Margin="0,0,0,0" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource PrimaryDarkBrush}" />
+                                <Setter TargetName="Underline" Property="Background"
+                                        Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="False" />
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SettingsTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border Grid.Row="0" BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="0,0,0,1" Margin="0,0,18,0">
+                                <TabPanel IsItemsHost="True" Panel.ZIndex="1" />
+                            </Border>
+                            <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="0,16,0,0" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="26,20,26,24">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- 表单内容放在 ScrollViewer 中：窗口空间不足时可用鼠标滚轮上下滚动 -->
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled" Margin="0,0,18,0">
-            <StackPanel>
+        <StackPanel Grid.Row="0" Margin="0,0,0,14">
+            <TextBlock Text="设置" FontSize="17" FontWeight="Bold" Margin="0,0,0,4" />
+            <TextBlock Text="API 配置用于生成笔记；录音设置决定录下哪些声音。全程本地保存。" FontSize="12"
+                       Foreground="{StaticResource TextSecondaryBrush}" />
+        </StackPanel>
 
-                <TextBlock Text="LLM 笔记生成配置" FontSize="17" FontWeight="Bold" Margin="0,0,0,4" />
-                <TextBlock Text="STT 与 OCR 完全离线运行，仅生成笔记时需要联网。" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,18" />
+        <TabControl Grid.Row="1" Style="{StaticResource SettingsTabControlStyle}">
 
-                <TextBlock Text="API 基础地址（OpenAI 兼容，默认 DeepSeek）" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="BaseUrlBox" Margin="0,0,0,14" />
+            <!-- ═══════════ 页签一：API 配置 ═══════════ -->
+            <TabItem Header="API 配置" Style="{StaticResource SettingsTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Margin="0,0,18,0">
+                    <StackPanel>
 
-                <TextBlock Text="LLM API Key" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="ApiKeyBox" Margin="0,0,0,14" />
+                        <TextBlock Text="API 基础地址（OpenAI 兼容，默认 DeepSeek）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="BaseUrlBox" Margin="0,0,0,14" LostFocus="BaseUrlBox_LostFocus" />
 
-                <TextBlock Text="模型名称" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="ModelBox" Margin="0,0,0,14" />
+                        <TextBlock Text="LLM API Key" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="ApiKeyBox" Margin="0,0,0,14" LostFocus="ApiKeyBox_LostFocus" />
 
-                <TextBlock Text="请求超时（秒）" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="TimeoutBox" Margin="0,0,0,4" />
-                <TextBlock Text="本地模型推理较慢时请调大（范围 60–7200，默认 1800 = 30 分钟），可减少超时报错。"
-                           FontSize="11" Foreground="{StaticResource TextHintBrush}"
-                           TextWrapping="Wrap" Margin="2,0,0,14" />
+                        <Grid Margin="0,0,0,6">
+                            <TextBlock Text="模型名称" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                            <Button x:Name="RefreshModelsButton" Content="刷新模型列表"
+                                    Style="{StaticResource GhostButtonStyle}" Height="26" Padding="10,0"
+                                    HorizontalAlignment="Right" Click="RefreshModelsButton_Click" />
+                        </Grid>
+                        <!-- 可编辑下拉：填好地址 + Key 后自动拉取，也可以手输自定义模型名 -->
+                        <ComboBox x:Name="ModelCombo" IsEditable="True" Margin="0,0,0,4" />
+                        <TextBlock x:Name="ModelHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,14"
+                                   Text="填写地址与 API Key 后会自动获取可用模型；也可直接输入自定义模型名，或点右上角刷新。" />
 
-                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-                    <Button x:Name="TestButton" Content="测试连接" Style="{StaticResource GhostButtonStyle}"
-                            Width="96" Height="32" Click="TestButton_Click" />
-                    <TextBlock x:Name="TestResultText" FontSize="12" VerticalAlignment="Center"
-                               Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="360"
-                               Foreground="{StaticResource TextSecondaryBrush}" />
-                </StackPanel>
+                        <TextBlock Text="请求超时（秒）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="TimeoutBox" Margin="0,0,0,4" />
+                        <TextBlock Text="本地模型推理较慢时请调大（范围 60–7200，默认 1800 = 30 分钟），可减少超时报错。"
+                                   FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,14" />
 
-                <TextBlock Text="备用 API Key（可选，主配置失败时自动切换）" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="FallbackApiKeyBox" Margin="0,0,0,14" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <Button x:Name="TestButton" Content="测试连接" Style="{StaticResource GhostButtonStyle}"
+                                    Width="96" Height="32" Click="TestButton_Click" />
+                            <TextBlock x:Name="TestResultText" FontSize="12" VerticalAlignment="Center"
+                                       Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="380"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                        </StackPanel>
 
-                <TextBlock Text="备用 API 基础地址（可选）" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <TextBox x:Name="FallbackBaseUrlBox" Margin="0,0,0,14" />
+                        <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
+                                Padding="14,10" Margin="0,4,0,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           Foreground="{StaticResource PrimaryBrush}" Margin="0,0,10,0"
+                                           VerticalAlignment="Top" />
+                                <TextBlock FontSize="12" Foreground="#33415C" TextWrapping="Wrap" MaxWidth="450"
+                                           Text="说明：本软件为单机离线运行，STT 与 OCR 在本地完成，仅 LLM 笔记生成需要 API Key。Key 仅保存在本机（DPAPI 加密）。" />
+                            </StackPanel>
+                        </Border>
 
-                <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,8,0,18" />
-
-                <TextBlock Text="定时记录（课表自动录音）" FontSize="15" FontWeight="Bold" Margin="0,0,0,4" />
-                <TextBlock Text="在「定时记录 · 课表」中编辑每周课表；到点自动开始、下课自动结束。" FontSize="11"
-                           Foreground="{StaticResource TextHintBrush}" Margin="0,0,0,12" />
-
-                <TextBlock Text="自动录音默认麦克风（可留空 = 系统默认设备）" FontSize="12"
-                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
-                <ComboBox x:Name="ScheduleMicCombo" Margin="0,0,0,4" />
-                <TextBlock x:Name="ScheduleMicHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
-                           TextWrapping="Wrap" Margin="2,0,0,0"
-                           Text="定时触发时没有弹窗选择机会，请在此固定设备；设备不可用时会自动回退默认设备。" />
-
-                <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
-                        Padding="14,10" Margin="0,6,0,4">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE946;" FontFamily="Segoe MDL2 Assets" FontSize="15"
-                                   Foreground="{StaticResource PrimaryBrush}" Margin="0,0,10,0"
-                                   VerticalAlignment="Top" />
-                        <TextBlock FontSize="12" Foreground="#33415C" TextWrapping="Wrap" MaxWidth="430"
-                                   Text="说明：本软件为单机离线运行，STT 与 OCR 在本地完成，仅 LLM 笔记生成需要 API Key。Key 仅保存在本机（DPAPI 加密）。" />
                     </StackPanel>
-                </Border>
+                </ScrollViewer>
+            </TabItem>
 
-            </StackPanel>
-        </ScrollViewer>
+            <!-- ═══════════ 页签二：录音设置 ═══════════ -->
+            <TabItem Header="录音设置" Style="{StaticResource SettingsTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Margin="0,0,18,0">
+                    <StackPanel>
+
+                        <TextBlock Text="声音来源（默认用于「开始记录」与定时记录）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="SourceCombo" Margin="0,0,0,4"
+                                  SelectionChanged="SourceCombo_SelectionChanged" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,14"
+                                   Text="麦克风录教室现场；系统声音录设备外放（在线课程、视频）；混合会把两者合成为一路录音。" />
+
+                        <StackPanel x:Name="MicSection" Margin="0,0,0,14">
+                            <TextBlock Text="麦克风设备（可留空 = 系统默认设备）" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <ComboBox x:Name="MicCombo" />
+                            <TextBlock x:Name="MicHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,6,0,0"
+                                       Text="USB 外接麦克风请在此指定；设备不可用时会自动回退系统默认设备。" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="SystemSection" Margin="0,0,0,14">
+                            <TextBlock Text="系统声音来源设备（可留空 = 系统默认播放设备）" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <ComboBox x:Name="OutputCombo" />
+                            <TextBlock x:Name="OutputHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,6,0,0"
+                                       Text="采集所选播放设备正在输出的声音（WASAPI 回环）；请选实际在出声的那个设备。" />
+                        </StackPanel>
+
+                        <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,4,0,16" />
+
+                        <TextBlock Text="定时记录（课表自动录音）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <TextBlock x:Name="ScheduleSourceHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,0" />
+
+                        <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
+                                Padding="14,10" Margin="0,18,0,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE7F8;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           Foreground="{StaticResource PrimaryBrush}" Margin="0,0,10,0"
+                                           VerticalAlignment="Top" />
+                                <TextBlock x:Name="RecordingTipText" FontSize="12" Foreground="#33415C"
+                                           TextWrapping="Wrap" MaxWidth="450"
+                                           Text="录音全程在本地完成，不会上传到任何服务器。" />
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
 
         <!-- 按钮区域独立于滚动区之外，固定在窗口底部 -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal"
+        <StackPanel Grid.Row="2" Orientation="Horizontal"
                     HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="取消" Style="{StaticResource GhostButtonStyle}" Width="92" Height="36"
                     Margin="0,0,12,0" Click="CancelButton_Click" />
