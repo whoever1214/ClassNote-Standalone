@@ -36,12 +36,16 @@ public class RecordingViewModelTests
         _mockUpload.Setup(x => x.EnqueueAudioAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>()))
             .Returns(Task.CompletedTask);
         _mockUpload.Setup(x => x.FlushAudioQueueAsync()).Returns(Task.CompletedTask);
-        // 本地处理管线默认无操作
-        _mockProcessor.Setup(x => x.ProcessAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<IProgress<string>?>()))
+        // 本地处理管线默认无操作（v0.6.0 起第二参数是音频文件集合，分轨录音时含多路）
+        _mockProcessor.Setup(x => x.ProcessAsync(It.IsAny<Guid>(), It.IsAny<RecordingAudio?>(), It.IsAny<IProgress<string>?>()))
             .Returns(Task.CompletedTask);
         // 设备 ID 默认空数组（各测试用 SetupMics 显式提供）
         _mockAudio.Setup(x => x.GetInputDeviceIds()).Returns(Array.Empty<string>());
         _mockAudio.Setup(x => x.GetInputDevices()).Returns(Array.Empty<string>());
+        // 播放设备同理（各测试用 SetupOutputs 显式提供）；不 stub 的话 Moq 会返回 null，
+        // 而 ViewModel 侧虽然做了空值兜底，测试里也不该依赖那条兜底
+        _mockAudio.Setup(x => x.GetOutputDeviceIds()).Returns(Array.Empty<string>());
+        _mockAudio.Setup(x => x.GetOutputDevices()).Returns(Array.Empty<string>());
 
         _tmpDir = Path.Combine(Path.GetTempPath(), $"classnote_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tmpDir);
@@ -62,13 +66,15 @@ public class RecordingViewModelTests
             _mockScreenshot.Object, _mockUpload.Object, config, _mockProcessor.Object);
     }
 
-    /// <summary>在临时目录创建录音文件并让 GetOutputPath 指向它。</summary>
-    private string CreateAudioFile(int size = 100)
+    /// <summary>在临时目录创建录音文件并让 GetRecordedAudio 指向它（单路麦克风，等价旧 GetOutputPath 语义）。</summary>
+    private RecordingAudio CreateAudioFile(int size = 100)
     {
         var path = Path.Combine(_tmpDir, "audio.wav");
         File.WriteAllBytes(path, new byte[size]);
         _mockAudio.Setup(x => x.GetOutputPath()).Returns(path);
-        return path;
+        var audio = new RecordingAudio(new[] { new RecordingAudioFile(RecordingAudioSource.Microphone, path) });
+        _mockAudio.Setup(x => x.GetRecordedAudio()).Returns(audio);
+        return audio;
     }
 
     private void Cleanup()
@@ -290,7 +296,7 @@ public class RecordingViewModelTests
         _mockScreenshot.Verify(x => x.Stop(), Times.Once);
         _mockUpload.Verify(x => x.FlushQueueAsync(), Times.Once);
         _mockApi.Verify(x => x.EndSessionAsync(_sessionId, It.IsAny<int>()), Times.Once);
-        _mockProcessor.Verify(x => x.ProcessAsync(_sessionId, It.IsAny<string?>(), It.IsAny<IProgress<string>?>()), Times.Once);
+        _mockProcessor.Verify(x => x.ProcessAsync(_sessionId, It.IsAny<RecordingAudio?>(), It.IsAny<IProgress<string>?>()), Times.Once);
         Assert.Equal("已停止", vm.StatusText);
         Cleanup();
     }
@@ -302,20 +308,20 @@ public class RecordingViewModelTests
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
         _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
-        _mockUpload.Setup(x => x.UploadAudioAsync(_sessionId, It.IsAny<string>(), "audio.wav"))
+        _mockUpload.Setup(x => x.UploadAudioTracksAsync(_sessionId, It.IsAny<RecordingAudio>()))
             .ReturnsAsync(true);
         _mockApi.Setup(x => x.EndSessionAsync(_sessionId, It.IsAny<int>())).Returns(Task.CompletedTask);
         var vm = CreateVm();
         await vm.StartRecordingAsync();
-        var audioFile = CreateAudioFile(120);
+        var audio = CreateAudioFile(120);
 
         // Act
         await vm.StopRecordingAsync();
         if (vm.BackgroundProcessingTask != null)
             await vm.BackgroundProcessingTask;
 
-        // Assert
-        _mockUpload.Verify(x => x.UploadAudioAsync(_sessionId, audioFile, "audio.wav"), Times.Once);
+        // Assert —— 落地按"路"登记（v0.6.0 起不再走单文件 UploadAudioAsync）
+        _mockUpload.Verify(x => x.UploadAudioTracksAsync(_sessionId, audio), Times.Once);
         _mockUpload.Verify(x => x.EnqueueAudioAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _mockApi.Verify(x => x.EndSessionAsync(_sessionId, It.IsAny<int>()), Times.Once);
         Assert.Equal("已停止", vm.StatusText);
@@ -340,7 +346,7 @@ public class RecordingViewModelTests
             await vm.BackgroundProcessingTask;
 
         // Assert
-        _mockUpload.Verify(x => x.UploadAudioAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        _mockUpload.Verify(x => x.UploadAudioTracksAsync(It.IsAny<Guid>(), It.IsAny<RecordingAudio>()), Times.Never);
         _mockUpload.Verify(x => x.EnqueueAudioAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         _mockApi.Verify(x => x.EndSessionAsync(_sessionId, It.IsAny<int>()), Times.Once);
         Assert.Equal("已停止", vm.StatusText);
@@ -354,20 +360,20 @@ public class RecordingViewModelTests
         SetupMics(new[] { "Mic 1" }, new[] { "id-1" });
         _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
         _mockUpload.Setup(x => x.FlushQueueAsync()).Returns(Task.CompletedTask);
-        _mockUpload.Setup(x => x.UploadAudioAsync(_sessionId, It.IsAny<string>(), "audio.wav"))
-            .ReturnsAsync(false); // 直传失败，应入队兜底
+        _mockUpload.Setup(x => x.UploadAudioTracksAsync(_sessionId, It.IsAny<RecordingAudio>()))
+            .ReturnsAsync(false); // 落地失败，应逐路入队兜底
         _mockApi.Setup(x => x.EndSessionAsync(_sessionId, It.IsAny<int>())).Returns(Task.CompletedTask);
         var vm = CreateVm();
         await vm.StartRecordingAsync();
-        var audioFile = CreateAudioFile(120);
+        var audio = CreateAudioFile(120);
 
         // Act
         await vm.StopRecordingAsync();
         if (vm.BackgroundProcessingTask != null)
             await vm.BackgroundProcessingTask;
 
-        // Assert — 音频失败不应中断结束流程，且已登记入队
-        _mockUpload.Verify(x => x.EnqueueAudioAsync(_sessionId, audioFile, "audio.wav"), Times.Once);
+        // Assert — 音频失败不应中断结束流程，且已逐路登记入队（文件名保留 mic / system 以便辨认来源）
+        _mockUpload.Verify(x => x.EnqueueAudioAsync(_sessionId, audio.MicrophonePath!, "mic.wav"), Times.Once);
         _mockApi.Verify(x => x.EndSessionAsync(_sessionId, It.IsAny<int>()), Times.Once);
         Assert.Equal("已停止", vm.StatusText);
         Cleanup();
@@ -427,5 +433,71 @@ public class RecordingViewModelTests
 
         // Assert
         Assert.Equal("01:01:01", vm.ElapsedDisplay);
+    }
+
+    /// <summary>同时设置播放设备显示名与稳定 ID（未提供 ID 时用 "out:{name}" 合成）。</summary>
+    private void SetupOutputs(string[] names, string[]? ids = null)
+    {
+        _mockAudio.Setup(x => x.GetOutputDevices()).Returns(names);
+        _mockAudio.Setup(x => x.GetOutputDeviceIds()).Returns(ids ?? names.Select(n => "out:" + n).ToArray());
+    }
+
+    [Fact]
+    public void BothSource_ShowsSystemAudioNoticeWithPlaybackDevice()
+    {
+        // 回归（v0.6.0 审查 🟡-6）：「麦克风和系统声音」下这段说明过去**根本不显示**
+        // ——承载它的提示框可见性绑的是 UsesMicrophone 的反值。结果是用户既不知道有没有在录，
+        // 也不知道声音取的是哪个播放设备（而选错设备正是回环录成静音的典型成因）。
+        SetupMics(new[] { "内置麦克风" }, new[] { "mic-1" });
+        SetupOutputs(new[] { "扬声器 A" }, new[] { "spk-1" });
+        var vm = new RecordingViewModel(_sessionId, _mockApi.Object, _mockAudio.Object,
+            _mockScreenshot.Object, _mockUpload.Object,
+            new RecordingConfig(AudioSourceKind.Both, OutputDeviceId: "spk-1"), _mockProcessor.Object);
+
+        Assert.True(vm.UsesMicrophone);
+        Assert.True(vm.UsesSystemAudio);
+        Assert.True(vm.HasAudioNotice, "来源含系统声音时提示区域必须可见");
+        Assert.Equal("扬声器 A", vm.OutputDeviceDisplayName);
+        Assert.Contains("扬声器 A", vm.SystemSourceNotice);
+        Assert.Contains("两路", vm.SystemSourceNotice);
+    }
+
+    [Fact]
+    public void SystemSource_UsesDefaultPlaybackLabelWhenDeviceNotSpecified()
+    {
+        SetupMics(Array.Empty<string>(), Array.Empty<string>());
+        var vm = CreateVm(source: AudioSourceKind.System);
+
+        Assert.True(vm.HasAudioNotice);
+        Assert.Equal("系统默认播放设备", vm.OutputDeviceDisplayName);
+        Assert.Contains("系统默认播放设备", vm.SystemSourceNotice);
+    }
+
+    [Fact]
+    public void MicrophoneOnly_HidesSystemAudioNotice()
+    {
+        SetupMics(new[] { "内置麦克风" }, new[] { "mic-1" });
+        var vm = CreateVm();
+
+        Assert.False(vm.HasAudioNotice);
+    }
+
+    [Fact]
+    public async Task StartRecording_DegradedDevice_IsSurfacedWithoutTouchingStatusText()
+    {
+        // 回归（v0.6.0 审查 🟡-5）：启动时的降级说明过去只写进一个"仅在失败时才读取"的列表，
+        // 成功路径上永远到不了用户眼前。这里同时锁住"要显示"与"别污染控制量"两件事。
+        SetupMics(new[] { "内置麦克风" }, new[] { "mic-1" });
+        _mockAudio.Setup(x => x.StartRecording(It.IsAny<string>(), It.IsAny<RecordingConfig>())).Returns(true);
+        _mockAudio.Setup(x => x.LastWarning).Returns("指定播放设备不可用，已回退系统默认播放设备");
+        var vm = CreateVm();
+
+        await vm.StartRecordingAsync();
+
+        // StatusText 是录音页判断"是否在录音"的控制量（== "录音中"），不能被警告文案污染
+        Assert.Equal("录音中", vm.StatusText);
+        Assert.True(vm.HasRecordingWarning);
+        Assert.Contains("已回退", vm.RecordingWarning);
+        Assert.True(vm.HasAudioNotice); // 即使来源是"仅麦克风"，有降级也要显示提示区域
     }
 }

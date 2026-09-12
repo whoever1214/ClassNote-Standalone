@@ -8,7 +8,16 @@ publish/
 .vs/
 
 # 测试产物（含备份数据库，禁止入库）
-TestResults/
+TestResults/*
+# 例外：文档中被引用的测试 / 实测报告（纯文本，随仓库公开）
+!TestResults/bench/
+TestResults/bench/*
+!TestResults/bench/performance-report.md
+!TestResults/bench/v0.7-提速实测报告.md
+!TestResults/bench/v0.7-主回路审计报告.md
+!TestResults/reports/
+TestResults/reports/*
+!TestResults/reports/full-chain-test-report.md
 *.log
 
 # 分发包（体积大，不入库）

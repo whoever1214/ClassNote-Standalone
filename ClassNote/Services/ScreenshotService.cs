@@ -50,6 +50,12 @@ public class ScreenshotService : IScreenshotService
 
     public event EventHandler<ScreenshotResult>? ScreenshotCaptured;
 
+    /// <summary>
+    /// 是否处于"视频播放"状态（连续 VIDEO_CONFIRM_FRAMES 帧大幅变化后置位，稳定 VIDEO_EXIT_FRAMES 帧后复位）。
+    /// 只在采样时刻更新，因此"开始放视频"到"转写让路"之间最多延迟一个采样间隔（常态 10 秒）。
+    /// </summary>
+    public bool IsVideoMode => _videoMode;
+
     public void Start(int initialIntervalMs = BASE_INTERVAL_MS)
     {
         _syncContext = SynchronizationContext.Current; // 通常为 UI 线程的 DispatcherSynchronizationContext

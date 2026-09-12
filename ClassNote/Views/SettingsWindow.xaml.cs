@@ -72,6 +72,11 @@ public partial class SettingsWindow : Window
         _suppressSourceChanged = false;
         ApplySourceVisibility();
 
+        // 课堂占用档位（v0.7 边录边转写）：顺序与枚举一一对应，直接按 SelectedIndex 映射
+        ClassroomTranscriptionCombo.ItemsSource = ClassroomTranscriptionModes.DisplayNames;
+        ClassroomTranscriptionCombo.SelectedIndex =
+            (int)ClassroomTranscriptionModes.FromStorage(s.ClassroomTranscription);
+
         // 地址/Key 填好后自动拉取模型列表（防抖，避免边输入边打请求）
         _autoFetchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
         _autoFetchTimer.Tick += async (_, _) =>
@@ -253,10 +258,10 @@ public partial class SettingsWindow : Window
             AudioSourceKind.System =>
                 "仅采集系统声音：麦克风不会被录音，适合在线课程 / 视频。注意区分耳机与扬声器，选错设备会录成静音。",
             AudioSourceKind.Both =>
-                "混合录音会把麦克风与系统声音合成为一路（各占一半），适合既要现场人声又要设备声音的课堂；" +
-                "同时占用两路采集，CPU 与内存略高。",
+                "麦克风与系统声音各录一份（分轨保存）、分别转写，笔记里会标明哪些内容来自「现场」、哪些来自「课件」，" +
+                "适合既要现场人声又要设备声音的课堂；代价是两路各跑一次语音识别，处理时间约为单路的两倍。",
             _ =>
-                "仅采集麦克风：教室现场人声。需要同时录下设备外放的声音时，请改选「系统声音」或「麦克风 + 系统声音」。",
+                "仅采集麦克风：教室现场人声。需要同时录下设备外放的声音时，请改选「仅系统声音」或「麦克风和系统声音」。",
         };
         RecordingTipText.Text += " 录音全程在本地完成，不会上传到任何服务器。";
     }
@@ -331,6 +336,8 @@ public partial class SettingsWindow : Window
             s.RecordingMicName = micName;
             s.RecordingOutputDeviceId = outputId;
             s.RecordingOutputDeviceName = outputName;
+            s.ClassroomTranscription = ((ClassroomTranscriptionMode)Math.Max(0,
+                ClassroomTranscriptionCombo.SelectedIndex)).ToString();
         });
         DialogResult = true;
     }

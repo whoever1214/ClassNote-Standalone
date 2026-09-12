@@ -122,6 +122,7 @@ public partial class RecordingPage : Page
         RecordingDot.Opacity = 1.0;
         UploadProgressBar.Visibility = Visibility.Collapsed;
         UploadStatusText.Visibility = Visibility.Collapsed;
+        TranscriptionStatusText.Visibility = Visibility.Collapsed;
 
         // 快速收尾后立即返回主页；音频转写等在后台完成
         await _viewModel.StopRecordingAsync();

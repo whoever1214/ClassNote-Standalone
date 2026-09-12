@@ -77,7 +77,9 @@ public sealed class PdfExportService : IPdfExportService
                         .FontSize(14).Bold().FontColor("#1565C0");
 
                     // QuestPDF 不渲染 HTML，故以 markdown 原文按行近似排版，
-                    // 保留标题/列表的相对结构。
+                    // 保留标题/列表的相对结构；**行内标记必须自己处理掉**——
+                    // 旧实现直接打印原文，于是 PDF 里会出现字面的 `**加粗**`、`$公式$`、反引号，
+                    // 且编号列表因识别正则转义丢失（`^d+[.)]s+`）永远匹配不上、形同虚设。
                     var lines = note.ContentMarkdown
                         .Replace("\r\n", "\n").Replace('\r', '\n')
                         .Split('\n');
@@ -93,21 +95,22 @@ public sealed class PdfExportService : IPdfExportService
 
                         // 标题
                         if (trimmed.StartsWith("### "))
-                            col.Item().Text(trimmed[4..]).FontSize(12).Bold().FontColor("#333333");
+                            WriteRichLine(col.Item(), trimmed[4..], 12, "#333333");
                         else if (trimmed.StartsWith("## "))
-                            col.Item().Text(trimmed[3..]).FontSize(14).Bold().FontColor("#1565C0");
+                            WriteRichLine(col.Item(), trimmed[3..], 14, "#1565C0");
                         else if (trimmed.StartsWith("# "))
-                            col.Item().Text(trimmed[2..]).FontSize(16).Bold().FontColor("#0D47A1");
-                        // 列表
+                            WriteRichLine(col.Item(), trimmed[2..], 16, "#0D47A1");
+                        // 无序列表
                         else if (trimmed.StartsWith("- ") || trimmed.StartsWith("* "))
-                            col.Item().PaddingLeft(12).Text("•  " + trimmed[2..]).FontSize(11).FontColor("#333333");
-                        else if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^d+[.)]s+"))
-                            col.Item().PaddingLeft(12).Text(trimmed).FontSize(11).FontColor("#333333");
+                            WriteRichLine(col.Item().PaddingLeft(12), "•  " + trimmed[2..], 11, "#333333");
+                        // 有序列表（1. / 2) / 1、 三种写法；旧正则转义写错，从来没识别到过）
+                        else if (MarkdownInlineText.TryStripOrderedMarker(trimmed, out var ordered))
+                            WriteRichLine(col.Item().PaddingLeft(12), ordered, 11, "#333333");
                         // 引用
                         else if (trimmed.StartsWith("> "))
-                            col.Item().PaddingLeft(12).Text(trimmed[2..]).Italic().FontColor("#666666");
+                            WriteRichLine(col.Item().PaddingLeft(12), trimmed[2..], 11, "#666666", italic: true);
                         else
-                            col.Item().Text(trimmed).FontSize(11).FontColor("#222222");
+                            WriteRichLine(col.Item(), trimmed, 11, "#222222");
                     }
                 });
 
@@ -121,6 +124,37 @@ public sealed class PdfExportService : IPdfExportService
         }).GeneratePdf(ms);
 
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// 把一行 Markdown 写成 QuestPDF 富文本：**行内标记（加粗/反引号/公式分隔符）在这里被消化掉**，
+    /// 文字内容原样保留。这样 PDF 与笔记页看到的是同一份内容，只是少了标记符号。
+    /// </summary>
+    private static void WriteRichLine(IContainer container, string markdown, float fontSize, string color,
+        bool italic = false)
+    {
+        container.Text(text =>
+        {
+            text.DefaultTextStyle(style => style.FontSize(fontSize).FontColor(color));
+
+            var runs = MarkdownInlineText.ParseLine(markdown);
+            if (runs.Count == 0)
+            {
+                text.Span(" ");
+                return;
+            }
+
+            foreach (var run in runs)
+            {
+                var span = text.Span(run.Text);
+                if (run.Bold)
+                    span.Bold();
+                if (italic)
+                    span.Italic();
+                if (run.Code)
+                    span.FontFamily("Consolas");
+            }
+        });
     }
 
     /// <summary>从系统字体目录注册一个中文字体，绑定到自定义名称 ClassNoteCJK。</summary>

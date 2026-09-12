@@ -101,6 +101,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- 状态指示 -->
@@ -154,6 +155,14 @@
                     <TextBlock x:Name="UploadStatusText" Text="正在自动保存截图与录音…"
                                FontSize="11" Foreground="{StaticResource TextHintBrush}"
                                HorizontalAlignment="Center" Margin="0,9,0,0" />
+                    <!-- 课堂转写进度（v0.7 边录边转写）：让用户看得见"笔记其实已经在做了"，
+                         并在检测到全屏放映/视频播放而让路时如实说明。无增量转写时整行隐藏。 -->
+                    <TextBlock x:Name="TranscriptionStatusText"
+                               Text="{Binding TranscriptionStatus}"
+                               FontSize="11" Foreground="#0F766E"
+                               HorizontalAlignment="Center" Margin="0,7,0,0" TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Visibility="{Binding HasTranscriptionStatus, Converter={StaticResource BoolToVisibilityConverter}}" />
                 </StackPanel>
 
                 <!-- 麦克风选择：仅当本次来源包含麦克风时显示 -->
@@ -165,21 +174,33 @@
                               SelectedItem="{Binding SelectedMic, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
 
-                <!-- 仅采集系统声音时说明录制对象，避免用户以为"没在录" -->
-                <Border Grid.Row="5" Margin="0,0,0,22" Background="#F4F5F8" CornerRadius="10" Padding="14,10"
-                        Visibility="{Binding UsesMicrophone, Converter={StaticResource InverseBoolToVisibilityConverter}}">
+                <!-- 来源包含系统声音（仅系统声音 / 麦克风和系统声音）时说明录制对象与来源设备，
+                     避免用户以为"没在录"或不知道在录哪个播放设备；若启动时发生了设备降级，
+                     同一块区域还会显示降级提示（HasAudioNotice = UsesSystemAudio || 有降级）。
+                     ⚠️ 说明文字的可见性绑 UsesSystemAudio：曾经绑"UsesMicrophone 的反值"，
+                     结果"麦克风和系统声音"下这句永远显示不出来 -->
+                <Border Grid.Row="6" Margin="0,0,0,22" Background="#F4F5F8" CornerRadius="10" Padding="14,10"
+                        Visibility="{Binding HasAudioNotice, Converter={StaticResource BoolToVisibilityConverter}}">
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="&#xE7F8;" FontFamily="Segoe MDL2 Assets" FontSize="14"
                                    Foreground="{StaticResource PrimaryBrush}" Margin="0,0,8,0"
-                                   VerticalAlignment="Center" />
-                        <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                   TextWrapping="Wrap" MaxWidth="400" VerticalAlignment="Center"
-                                   Text="正在录制系统声音：请让课件 / 视频在所选播放设备上出声。" />
+                                   VerticalAlignment="Top" />
+                        <StackPanel MaxWidth="400">
+                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       Visibility="{Binding UsesSystemAudio, Converter={StaticResource BoolToVisibilityConverter}}"
+                                       Text="{Binding SystemSourceNotice}" />
+                            <!-- 启动时发生降级（如所选播放设备失效、回退到系统默认）的显式提示：
+                                 只写日志等于没告诉用户 -->
+                            <TextBlock FontSize="12" Foreground="#B4530A" TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding HasRecordingWarning, Converter={StaticResource BoolToVisibilityConverter}}"
+                                       Text="{Binding RecordingWarning}" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
                 <!-- 结束录音 -->
-                <Button Grid.Row="6" x:Name="EndButton" Style="{StaticResource DangerButtonStyle}"
+                <Button Grid.Row="7" x:Name="EndButton" Style="{StaticResource DangerButtonStyle}"
                         Height="46" Click="EndButton_Click" Content="结束录音" ToolTip="停止录音并快速回到主页" />
             </Grid>
         </Border>

@@ -51,6 +51,15 @@ public class AppSettingsData
     /// <summary>播放设备显示名（仅用于设置界面展示，选录以 RecordingOutputDeviceId 为准）。</summary>
     public string RecordingOutputDeviceName { get; set; } = "";
 
+    /// <summary>
+    /// 边录边转写档位（关闭 / 自动 / 极速），存枚举名。
+    ///
+    /// 默认「自动」：课堂上边录边按块转写，但**永远只占一半逻辑核**，
+    /// 并且检测到全屏放映 / 视频播放 / 电池供电时自动降速让路。
+    /// 关闭时行为与 v0.6.0 完全一致（全部留到课后整文件转写）。
+    /// </summary>
+    public string ClassroomTranscription { get; set; } = nameof(ClassroomTranscriptionMode.Auto);
+
     /// <summary>旧字段（v0.4.x 的「定时记录默认麦克风」）：只用于升级时迁移到录音设置，不再写入。</summary>
     [Obsolete("v0.5.0 起改用 RecordingMicId/RecordingMicName；此属性仅用于读取旧 settings.json 做迁移。")]
     public string ScheduleMicId { get; set; } = "";
@@ -110,11 +119,15 @@ public sealed class AppSettings
     /// <summary>
     /// 把设置里的录音项转成采集配置（手动录音与定时录音的唯一来源，
     /// 避免两处各自拼装导致行为不一致）。
+    /// 注意必须带上 <c>RecordingMicName</c>：设备稳定 ID 失效（USB 换口、重装驱动、
+    /// MME 回退下标漂移）时，采集侧只能靠"显示名"回退匹配——漏传这一项会让那条后路永久失效，
+    /// 表现为"静默录到别的设备"。
     /// </summary>
     public static RecordingConfig ToRecordingConfig(AppSettingsData settings) => new(
-        AudioSourceKinds.FromStorage(settings.RecordingSource),
-        string.IsNullOrWhiteSpace(settings.RecordingMicId) ? null : settings.RecordingMicId,
-        string.IsNullOrWhiteSpace(settings.RecordingOutputDeviceId) ? null : settings.RecordingOutputDeviceId);
+        Source: AudioSourceKinds.FromStorage(settings.RecordingSource),
+        MicId: string.IsNullOrWhiteSpace(settings.RecordingMicId) ? null : settings.RecordingMicId,
+        OutputDeviceId: string.IsNullOrWhiteSpace(settings.RecordingOutputDeviceId) ? null : settings.RecordingOutputDeviceId,
+        MicName: string.IsNullOrWhiteSpace(settings.RecordingMicName) ? null : settings.RecordingMicName);
 
     private AppSettingsData Load()
     {
@@ -184,5 +197,6 @@ public sealed class AppSettings
         RecordingMicName = src.RecordingMicName,
         RecordingOutputDeviceId = src.RecordingOutputDeviceId,
         RecordingOutputDeviceName = src.RecordingOutputDeviceName,
+        ClassroomTranscription = src.ClassroomTranscription,
     };
 }

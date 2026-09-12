@@ -103,18 +103,36 @@ public static class FbankExtractor
 
     /// <summary>Compute fbank features from 16kHz mono WAV (float samples). Shape [frames, 80].</summary>
     public static float[][] ComputeFbank(float[] samples)
+        => ComputeFbank(samples, 0, samples.Length, previousSample: null);
+
+    /// <summary>
+    /// 计算 <paramref name="samples"/> 中 [<paramref name="start"/>, start+<paramref name="count"/>) 一段的
+    /// fbank 特征（形状 [frames, 80]）。供边录边转写按块计算使用：块内帧与"整文件一次算完再切块"
+    /// **逐帧、逐元素相同**，前提是调用方把块前一个采样经 <paramref name="previousSample"/> 传进来
+    /// ——预加重 <c>x[i] - 0.97*x[i-1]</c> 会跨块传染，漏掉它会让每块的第一帧差一个采样。
+    /// </summary>
+    /// <param name="previousSample">
+    /// 段起点前一个采样（整段从 0 开始时传 null，此时与旧行为一致用首采样本身）。
+    /// </param>
+    public static float[][] ComputeFbank(float[] samples, int start, int count, float? previousSample)
     {
         int n = samples.Length;
-        if (n < FrameLength)
+        if (count <= 0 || start < 0 || start >= n)
+            return Array.Empty<float[]>();
+        if (start + count > n)
+            count = n - start;
+        if (count < FrameLength)
             return Array.Empty<float[]>();
 
-        // preemphasis
-        var pre = new float[n];
-        pre[0] = samples[0];
-        for (int i = 1; i < n; i++)
-            pre[i] = (float)(samples[i] - 0.97 * samples[i - 1]);
+        // preemphasis（相对 start 的局部数组：pre[j] 对应全局采样 start + j）
+        var pre = new float[count];
+        pre[0] = previousSample.HasValue
+            ? (float)(samples[start] - 0.97 * previousSample.Value)
+            : samples[start];
+        for (int i = 1; i < count; i++)
+            pre[i] = (float)(samples[start + i] - 0.97 * samples[start + i - 1]);
 
-        int numFrames = 1 + (n - FrameLength) / FrameShift;
+        int numFrames = 1 + (count - FrameLength) / FrameShift;
         var mel = EnsureFilters();
         var hamming = new double[FrameLength];
         for (int i = 0; i < FrameLength; i++)

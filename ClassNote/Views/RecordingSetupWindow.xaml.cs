@@ -15,6 +15,9 @@ public partial class RecordingSetupWindow : Window
     private readonly string[] _micNames;
     private readonly string[] _outputIds;
     private readonly string[] _outputNames;
+
+    /// <summary>打开弹窗时的初始配置（来自「设置 → 录音设置」）。用于保留用户未在本次弹窗中改动的那一路设备。</summary>
+    private readonly RecordingConfig? _initial;
     private bool _suppressSourceChanged;
 
     /// <summary>Result after the user clicks "开始录制". Null if canceled.</summary>
@@ -30,6 +33,7 @@ public partial class RecordingSetupWindow : Window
         RecordingConfig? initial = null)
     {
         InitializeComponent();
+        _initial = initial;
         _micNames = mics;
         _outputNames = outputs ?? Array.Empty<string>();
         // 名称与稳定 ID 必须一一对应：调用方漏传/长度不符时用空 ID 补齐，
@@ -58,25 +62,33 @@ public partial class RecordingSetupWindow : Window
     {
         if (_suppressSourceChanged)
             return;
-        ApplySource(null);
+        // 传 _initial 而不是 null：用户在这里改选来源时，"另一路"的设备仍要沿用
+        // 「设置 → 录音设置」里保存的值。传 null 会让下拉框回到第 0 项（= 系统默认设备），
+        // 也就是把"用户配好的播放设备"丢掉——恰好复现"回环录成静音"这个本版要修的缺陷。
+        ApplySource(_initial);
     }
 
     /// <summary>
-    /// 按来源切换设备选择器：麦克风来源列麦克风；系统声音来源列播放设备（回环）;
-    /// 混合来源只能二选一（窗口空间有限），此处列麦克风，系统声音走设置里的默认播放设备。
+    /// 按来源切换设备选择器：
+    /// · 仅麦克风 → 列输入设备；
+    /// · 仅系统声音 → 列播放设备（回环来源）；
+    /// · 麦克风和系统声音 → 列播放设备（回环需要显式指定"哪个设备在出声"，
+    ///   选错就录成静音），麦克风沿用「设置 → 录音设置」里的默认设备，不再占用一列。
     /// </summary>
     private void ApplySource(RecordingConfig? initial)
     {
         var source = SelectedSource;
-        bool usesMicList = source is AudioSourceKind.Microphone or AudioSourceKind.Both;
+        bool usesMicList = source is AudioSourceKind.Microphone;
 
         DeviceLabel.Text = usesMicList ? "麦克风" : "系统声音来源设备";
         DeviceCombo.ItemsSource = usesMicList ? _micNames : _outputNames;
         var ids = usesMicList ? _micIds : _outputIds;
+        var names = usesMicList ? _micNames : _outputNames;
 
-        // 预设设备：麦克风来源按传入配置（弹窗打开前已从设置里取好）；系统声音来源列播放设备
-        int index = AudioDeviceSelection.ResolveIndex(ids, usesMicList ? _micNames : _outputNames,
-            usesMicList ? initial?.MicId : null, usesMicList ? initial?.MicName : null);
+        // 预设设备：麦克风来源按传入配置；系统声音来源（含"麦克风和系统声音"）按已保存的播放设备
+        int index = AudioDeviceSelection.ResolveIndex(ids, names,
+            usesMicList ? initial?.MicId : initial?.OutputDeviceId,
+            usesMicList ? initial?.MicName : null);
         if (ids.Length == 0)
         {
             DeviceCombo.SelectedIndex = -1;
@@ -87,17 +99,20 @@ public partial class RecordingSetupWindow : Window
         }
         DeviceHint.Text = source switch
         {
-            AudioSourceKind.System when _outputNames.Length > 0 =>
-                $"已检测到 {_outputNames.Length} 个播放设备；采集所选设备正在输出的声音。",
-            AudioSourceKind.System =>
+            AudioSourceKind.System or AudioSourceKind.Both when _outputNames.Length > 0 =>
+                $"已检测到 {_outputNames.Length} 个播放设备；采集所选设备正在输出的声音" +
+                (usesMicList ? "。" : "，请选实际在出声的那个。"),
+            AudioSourceKind.System or AudioSourceKind.Both =>
                 "未检测到播放设备，无法采集系统声音。",
-            AudioSourceKind.Both =>
-                $"麦克风：已检测到 {_micNames.Length} 个输入设备；系统声音固定使用「设置 → 录音设置」中的播放设备。",
             _ when _micNames.Length > 0 =>
                 $"已检测到 {_micNames.Length} 个输入设备。",
             _ =>
                 "未检测到麦克风，录音将不可用。",
         };
+        if (source == AudioSourceKind.Both)
+        {
+            DeviceHint.Text += "麦克风使用「设置 → 录音设置」中选定的设备（两路会合成为一路）。";
+        }
     }
 
     /// <summary>把设备稳定 ID 数组对齐到显示名数量（缺失项补空串 = 该设备走系统默认）。</summary>
@@ -114,7 +129,7 @@ public partial class RecordingSetupWindow : Window
     private void StartButton_Click(object sender, RoutedEventArgs e)
     {
         var source = SelectedSource;
-        bool usesMicList = source is AudioSourceKind.Microphone or AudioSourceKind.Both;
+        bool usesMicList = source is AudioSourceKind.Microphone;
 
         int idx = DeviceCombo.SelectedIndex;
         string? deviceName = idx >= 0 && idx < DeviceCombo.Items.Count
@@ -124,16 +139,36 @@ public partial class RecordingSetupWindow : Window
             ? (usesMicList ? _micIds[idx] : _outputIds[idx])
             : null;
 
+        // 只覆盖本次来源真正用到的那一路设备，另一路沿用设置里的默认值
+        // （旧实现里"麦克风和系统声音"的播放设备被丢弃，回环只能落到系统默认设备）
+        var config = new RecordingConfig(
+            source,
+            MicId: source switch
+            {
+                AudioSourceKind.Microphone => deviceId,
+                AudioSourceKind.Both => _initial?.MicId,
+                _ => null,
+            },
+            OutputDeviceId: source switch
+            {
+                AudioSourceKind.System or AudioSourceKind.Both => deviceId,
+                _ => null,
+            },
+            MicName: source switch
+            {
+                AudioSourceKind.Microphone => deviceName,
+                AudioSourceKind.Both => _initial?.MicName,
+                _ => null,
+            });
+
         Result = new RecordingSetupResult
         {
             Course = CourseCombo.SelectedItem as string ?? "",
             Title = string.IsNullOrWhiteSpace(TitleBox.Text) ? null : TitleBox.Text.Trim(),
-            MicName = usesMicList ? deviceName : null,
-            MicId = usesMicList ? deviceId : null,
-            AudioConfig = new RecordingConfig(
-                source,
-                MicId: usesMicList ? deviceId : null,
-                OutputDeviceId: source == AudioSourceKind.System ? deviceId : null),
+            // 这两项为兼容既有调用方保留（与 AudioConfig 保持一致）
+            MicName = config.MicName,
+            MicId = config.MicId,
+            AudioConfig = config,
         };
         DialogResult = true;
     }

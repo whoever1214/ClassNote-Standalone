@@ -56,6 +56,21 @@ public class AudioSourceKindsTests
     }
 
     [Fact]
+    public void DisplayNames_AreExactlyTheThreeAgreedLabels()
+    {
+        // 来源固定为三种，文案即产品约定（下拉选项与提示语都读这里，改动必须是有意的）
+        Assert.Equal(new[] { "仅麦克风", "仅系统声音", "麦克风和系统声音" }, AudioSourceKinds.DisplayNames);
+    }
+
+    [Fact]
+    public void FromDisplayName_OldLabelText_FallsBackToMicrophone()
+    {
+        // v0.6.0 改过文案；旧版界面文案不是存储值，识别不出时回退仅麦克风（不静默录错来源）
+        Assert.Equal(AudioSourceKind.Microphone, AudioSourceKinds.FromDisplayName("麦克风 + 系统声音（混合）"));
+        Assert.Equal(AudioSourceKind.Microphone, AudioSourceKinds.FromDisplayName("系统声音（设备外放）"));
+    }
+
+    [Fact]
     public void RecordingConfig_ReportsWhichSourcesAreNeeded()
     {
         var mic = new RecordingConfig(AudioSourceKind.Microphone, "mic-1");

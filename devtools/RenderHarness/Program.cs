@@ -86,6 +86,24 @@ public static class Program
         CheckRecordingSourceLayout(page2b);
         RenderToPng(page2b, Path.Combine(outDir, "m2b-recording-system.png"), 1040, 680);
 
+        // 2.2 麦克风和系统声音来源的录音页（v0.6.0 审查 🟡-6 的回归场景）：
+        //     这个来源下麦克风下拉框与系统声音说明**会同时显示**，而它们曾同处一个 Grid 行、
+        //     靠"互斥显示"才不冲突——必须确认现在真的不重叠
+        var bothConfig = new RecordingConfig(AudioSourceKind.Both);
+        var bothVm = new RecordingViewModel(Guid.NewGuid(), new ApiService(), new AudioService(),
+            new ScreenshotService(), new UploadService("", new ApiService()), bothConfig)
+        {
+            StatusText = "录音中",
+            ElapsedSeconds = 245,
+            ScreenshotCount = 7
+        };
+        var page2c = new RecordingPage(Guid.NewGuid(), "计算机网络", bothConfig) { DataContext = bothVm };
+        page2c.Measure(new Size(1040, 680));
+        page2c.Arrange(new Rect(0, 0, 1040, 680));
+        page2c.UpdateLayout();
+        CheckBothSourceLayout(page2c);
+        RenderToPng(page2c, Path.Combine(outDir, "m2c-recording-both.png"), 1040, 680);
+
         // 3. NoteViewPage（隐藏 WebView2 以便渲染工具栏与错误态）
         var noteVm = new NoteViewModel(api);
         var sessions = api.ListSessionsAsync().GetAwaiter().GetResult().ToList();
@@ -450,6 +468,48 @@ public static class Program
         Console.WriteLine($"[check] recording-source-label={hasSourceLabel} (expect True)");
         Console.WriteLine($"[check] recording-system-notice={hasSystemNotice} (expect True)");
         Console.WriteLine($"[check] recording-mic-combo-visible-when-system-only={micCombos == 0} (expect True)");
+    }
+
+    /// <summary>
+    /// 核对「麦克风和系统声音」来源的录音页：麦克风下拉框与系统声音说明**都要显示**
+    /// （说明里应含"两路"与来源播放设备），且两者**不得重叠**——
+    /// 它们曾同处一个 Grid 行、靠"互斥显示"才不冲突，这一条就是防止修复把重叠放出来。
+    /// </summary>
+    static void CheckBothSourceLayout(Page page)
+    {
+        if (page.Content is not DependencyObject root)
+            return;
+
+        FrameworkElement? micCombo = null;
+        TextBlock? notice = null;
+        void Walk(DependencyObject node)
+        {
+            if (node is ComboBox c && c.Visibility == Visibility.Visible
+                && c.ItemsSource is IEnumerable<string>)
+                micCombo ??= c;
+            if (node is TextBlock tb && tb.Visibility == Visibility.Visible
+                && tb.Text.Contains("正在录制麦克风与系统声音"))
+                notice ??= tb;
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(node); i++)
+                Walk(VisualTreeHelper.GetChild(node, i));
+        }
+        Walk(root);
+
+        var overlaps = false;
+        if (micCombo != null && notice != null)
+        {
+            var a = micCombo.TransformToAncestor(page)
+                .TransformBounds(new Rect(0, 0, micCombo.ActualWidth, micCombo.ActualHeight));
+            var b = notice.TransformToAncestor(page)
+                .TransformBounds(new Rect(0, 0, notice.ActualWidth, notice.ActualHeight));
+            overlaps = a.IntersectsWith(b);
+        }
+
+        Console.WriteLine($"[check] recording-both-mic-combo-visible={micCombo != null} (expect True)");
+        Console.WriteLine($"[check] recording-both-notice-visible={notice != null} (expect True)");
+        Console.WriteLine($"[check] recording-both-notice-overlaps-mic={overlaps} (expect False)");
+        // 期望：说明文案里同时出现"两路"与来源播放设备
+        Console.WriteLine($"[check] recording-both-notice='{notice?.Text}'");
     }
 
     /// <summary>核对筛选无结果时展示的是"当前科目下暂无记录"而非"暂无课堂记录"。</summary>

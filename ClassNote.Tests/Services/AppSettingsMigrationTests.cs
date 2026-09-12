@@ -112,6 +112,7 @@ public class AppSettingsMigrationTests
         {
             RecordingSource = nameof(AudioSourceKind.Both),
             RecordingMicId = "mic-1",
+            RecordingMicName = "USB 麦克风",
             RecordingOutputDeviceId = "spk-1",
         };
 
@@ -121,6 +122,10 @@ public class AppSettingsMigrationTests
         Assert.Equal("mic-1", config.MicId);
         Assert.Equal("spk-1", config.OutputDeviceId);
         Assert.Equal(2, config.ChannelCount);
+        // 回归（v0.6.0 审查 🟡-8）：MicName 过去被漏传 → 恒为 null，
+        // 于是"设备 ID 失效时按显示名回退匹配"这条后路永久失效，
+        // 表现就是"配了 A 麦克风却静默录到 B 麦克风"
+        Assert.Equal("USB 麦克风", config.MicName);
     }
 
     [Fact]

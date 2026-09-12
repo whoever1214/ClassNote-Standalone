@@ -62,6 +62,48 @@ public class UploadService : IUploadService
         });
     }
 
+    /// <summary>
+    /// 落地分轨录音：麦克风与系统声音各存一个文件（<c>{sessionId}_mic.wav</c> /
+    /// <c>{sessionId}_system.wav</c>），并一次性登记到会话。
+    /// 文件名刻意保持可辨识——分轨录音的价值就在于"哪一路是哪一路"，
+    /// 落成 <c>audio.wav</c> 这种通用名会把来源信息丢掉。
+    /// </summary>
+    public Task<bool> UploadAudioTracksAsync(Guid sessionId, RecordingAudio audio)
+    {
+        return Task.Run(() =>
+        {
+            try
+            {
+                if (audio.IsEmpty) return true;
+
+                string? micDest = null;
+                string? sysDest = null;
+
+                foreach (var file in audio.Files)
+                {
+                    if (string.IsNullOrEmpty(file.Path) || !File.Exists(file.Path))
+                        continue;
+                    if (new FileInfo(file.Path).Length == 0)
+                        continue;
+
+                    var name = file.Source == RecordingAudioSource.System ? "system.wav" : "mic.wav";
+                    var dest = Path.Combine(_audioDir, $"{sessionId}_{name}");
+                    File.Copy(file.Path, dest, overwrite: true);
+
+                    if (file.Source == RecordingAudioSource.System) sysDest = dest;
+                    else micDest = dest;
+                }
+
+                LocalRepository.Instance.SetSessionAudioTracks(sessionId, micDest, sysDest);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        });
+    }
+
     public Task EnqueueAudioAsync(Guid sessionId, string filePath, string filename)
     {
         // 单机模式：直接落地即可（与 UploadAudioAsync 相同），无"离线队列"概念

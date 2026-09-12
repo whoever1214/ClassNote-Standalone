@@ -14,6 +14,12 @@ public interface IUploadService : IDisposable
     /// <summary>将录音文件落地到本地数据目录并关联会话，成功返回 true。</summary>
     Task<bool> UploadAudioAsync(Guid sessionId, string filePath, string filename);
 
+    /// <summary>
+    /// 将分轨录音的每一路分别落地（<c>{sessionId}_mic.wav</c> / <c>{sessionId}_system.wav</c>）
+    /// 并一次性登记到会话。单路录音也可用（只会写其中一路）。
+    /// </summary>
+    Task<bool> UploadAudioTracksAsync(Guid sessionId, RecordingAudio audio);
+
     /// <summary>登记录音文件到持久目录（供处理后使用）。</summary>
     Task EnqueueAudioAsync(Guid sessionId, string filePath, string filename);
 

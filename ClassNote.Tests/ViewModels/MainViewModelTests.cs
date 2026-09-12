@@ -332,6 +332,89 @@ public class MainViewModelTests
         Assert.Contains("自习（自定义）", _vm.CourseFilters);
     }
 
+    // ── 「最近记录默认显示所有课程」的加固（空值回退 + 候选集不被清空）──
+
+    [Fact]
+    public async Task CourseFilter_NullOrBlank_FallsBackToAllCourses()
+    {
+        // 场景：WPF 的 ComboBox 在 ItemsSource 变化时会把 SelectedItem 推成 null，
+        // 双向绑定于是把 null 写回筛选条件。若不回退，筛选条件会变成"谁都不匹配"，
+        // 列表整片空白——而用户预期的是"默认显示所有课程"。
+        var math = new Session { Id = Guid.NewGuid(), Course = "数学", Status = "completed" };
+        var english = new Session { Id = Guid.NewGuid(), Course = "英语", Status = "completed" };
+        _mockApi.Setup(x => x.ListSessionsAsync()).ReturnsAsync(new List<Session> { math, english });
+        await _vm.LoadSessionsAsync();
+
+        _vm.CourseFilter = null!;
+        Assert.Equal(MainViewModel.AllCourses, _vm.CourseFilter);
+        Assert.False(_vm.IsFiltered);
+        Assert.Equal(2, _vm.FilteredSessions.Count);
+
+        _vm.CourseFilter = "   ";
+        Assert.Equal(MainViewModel.AllCourses, _vm.CourseFilter);
+        Assert.Equal(2, _vm.FilteredSessions.Count);
+    }
+
+    [Fact]
+    public async Task CourseFilters_NeverBecomeEmptyWhileRefreshing()
+    {
+        // 候选集是筛选下拉的 ItemsSource：一旦被清空，ComboBox 会把选中项推成 null。
+        // 这里守着"刷新期间集合永不为空、也永不整体重置"。
+        _mockApi.Setup(x => x.ListSessionsAsync())
+            .ReturnsAsync(new List<Session> { new() { Id = Guid.NewGuid(), Course = "数学", Status = "completed" } });
+
+        var resets = 0;
+        var sawEmpty = false;
+        _vm.CourseFilters.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset) resets++;
+            if (_vm.CourseFilters.Count == 0) sawEmpty = true;
+        };
+
+        await _vm.LoadSessionsAsync();   // 首次：从 [全部课程] 补齐到完整候选
+        await _vm.LoadSessionsAsync();   // 再次：内容不变 → 不应有任何变更
+        await _vm.LoadSessionsAsync();
+
+        Assert.Equal(0, resets);
+        Assert.False(sawEmpty);
+        Assert.Equal(MainViewModel.AllCourses, _vm.CourseFilters[0]);
+    }
+
+    [Fact]
+    public async Task CourseFilter_SurvivesRefresh_AndStaysInCandidates()
+    {
+        // 用户手动筛了"英语"之后，后台 3 秒轮询刷新不得把筛选条件重置或把它从候选里挤掉
+        var math = new Session { Id = Guid.NewGuid(), Course = "数学", Status = "completed" };
+        var english = new Session { Id = Guid.NewGuid(), Course = "英语", Status = "completed" };
+        _mockApi.Setup(x => x.ListSessionsAsync()).ReturnsAsync(new List<Session> { math, english });
+        await _vm.LoadSessionsAsync();
+
+        _vm.CourseFilter = "英语";
+        await _vm.LoadSessionsAsync(showLoading: false);
+
+        Assert.Equal("英语", _vm.CourseFilter);
+        Assert.True(_vm.IsFiltered);
+        Assert.Contains("英语", _vm.CourseFilters);
+        Assert.Equal(english.Id, Assert.Single(_vm.FilteredSessions).Id);
+    }
+
+    [Fact]
+    public async Task CourseFilter_KeepsCustomCourseThatNoLongerAppearsInRecords()
+    {
+        // 自定义课程名的记录被删掉/被 20 条上限挤出去时，筛选条件不能被静默改写成别的科目
+        var custom = new Session { Id = Guid.NewGuid(), Course = "自习（自定义）", Status = "completed" };
+        _mockApi.Setup(x => x.ListSessionsAsync()).ReturnsAsync(new List<Session> { custom });
+        await _vm.LoadSessionsAsync();
+        _vm.CourseFilter = "自习（自定义）";
+
+        _mockApi.Setup(x => x.ListSessionsAsync())
+            .ReturnsAsync(new List<Session> { new() { Id = Guid.NewGuid(), Course = "数学", Status = "completed" } });
+        await _vm.LoadSessionsAsync();
+
+        Assert.Equal("自习（自定义）", _vm.CourseFilter);
+        Assert.Contains("自习（自定义）", _vm.CourseFilters);
+    }
+
     [Fact]
     public async Task Selection_SurvivesFilterSwitch()
     {

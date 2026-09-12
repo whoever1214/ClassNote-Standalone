@@ -5,11 +5,21 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.5.0</Version>
-    <FileVersion>0.5.0.0</FileVersion>
-    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- 提示词构造与分段逻辑是纯函数，允许测试项目直接覆盖（否则"保真要求"无法回归验证） -->
+    <InternalsVisibleTo Include="ClassNote.Tests" />
+    <!--
+      NoteBench 是"边录边转写 = 整文件转写"的实测工具：它必须驱动**生产代码里的同一个块推理入口**
+      （SenseVoiceSttService.TranscribeChunk）才能证明两条路产出相同。
+      为此放开 internal 可见性，而不是把这个内部接缝提升为公开 API——公开出去就再也收不回来了。
+    -->
+    <InternalsVisibleTo Include="NoteBench" />
+  </ItemGroup>
   <ItemGroup>
     <Resource Include="app.ico" />
     <None Include="models\sensevoice\model_quant.onnx" CopyToOutputDirectory="PreserveNewest" />

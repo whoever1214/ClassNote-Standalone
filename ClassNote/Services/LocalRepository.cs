@@ -3,27 +3,44 @@ using System.IO;
 
 namespace ClassNote.Services;
 
+/// <summary>一行截图记录（含图片路径与 OCR 文本）。</summary>
+/// <param name="SeqNo">会话内序号。</param>
+/// <param name="Timestamp">录音内秒数。</param>
+/// <param name="Type">annotation / new_slide / video。</param>
+/// <param name="ImagePath">图片文件路径。</param>
+/// <param name="OcrText">OCR 文本；null = 还没识别过，"" = 识别过但图里没有文字。</param>
+public sealed record ScreenshotRow(int SeqNo, double Timestamp, string Type, string ImagePath, string? OcrText);
+
 /// <summary>
 /// 单机本地数据存储（替代原服务端 PostgreSQL）。
 /// 数据库文件位于 %LOCALAPPDATA%/ClassNote/classnote.db，
 /// 保存会话、截图、笔记等全部数据，无需任何服务端。
 /// </summary>
-public sealed class LocalRepository : IDisposable
+public sealed class LocalRepository : IDisposable, ITranscriptChunkStore
 {
     private readonly string _dbPath;
     private readonly object _writeLock = new();
 
     public static LocalRepository Instance { get; } = new();
 
-    private LocalRepository()
+    private LocalRepository() : this(DefaultDbPath()) { }
+
+    /// <summary>
+    /// 指定库文件路径（单元测试用：绝不能让测试写进用户真实的 classnote.db）。
+    /// </summary>
+    internal LocalRepository(string dbPath)
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ClassNote");
-        Directory.CreateDirectory(dir);
-        _dbPath = Path.Combine(dir, "classnote.db");
+        var dir = Path.GetDirectoryName(dbPath);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+        _dbPath = dbPath;
         InitDb();
     }
+
+    /// <summary>生产环境的库文件位置：%LOCALAPPDATA%/ClassNote/classnote.db。</summary>
+    internal static string DefaultDbPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "ClassNote", "classnote.db");
 
     private void InitDb()
     {
@@ -72,12 +89,60 @@ public sealed class LocalRepository : IDisposable
                 title TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS transcript_chunks (
+                session_id TEXT NOT NULL,
+                track INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                start_seconds INTEGER NOT NULL DEFAULT 0,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (session_id, track, chunk_index)
             );", db);
         cmd.ExecuteNonQuery();
+
+        // v0.6.0：分轨录音（麦克风 + 系统声音）需要存第二路音频路径。
+        // 本仓库没有迁移框架，这里做一次幂等补列（SQLite 不支持 IF NOT EXISTS 加列，
+        // 故先查 table_info 再决定是否 ALTER）。
+        EnsureSessionAudioPathSystemColumn(db);
 
         // 启动时把长期停留在非终态（recording/processing/ended）的会话标记为失败，
         // 避免进程中途退出后遗留"永久处理中"的会话造成主页无休止轮询。
         RecoverStaleSessions();
+    }
+
+    /// <summary>
+    /// 幂等补上 sessions.audio_path_system 列（旧库升级用）。
+    /// 已存在则什么都不做；任何异常都吞掉——补列失败不该让整个应用起不来，
+    /// 最坏情况只是分轨录音的第二路路径没记住。
+    /// </summary>
+    private static void EnsureSessionAudioPathSystemColumn(SQLiteConnection db)
+    {
+        try
+        {
+            bool exists = false;
+            using (var check = new SQLiteCommand("PRAGMA table_info(sessions)", db))
+            using (var reader = check.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    if (string.Equals(reader.GetString(1), "audio_path_system", StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+            }
+            if (exists)
+                return;
+
+            using var alter = new SQLiteCommand("ALTER TABLE sessions ADD COLUMN audio_path_system TEXT", db);
+            alter.ExecuteNonQuery();
+        }
+        catch
+        {
+            // 补列失败不致命：分轨录音的系统声音路径会丢失，笔记仍按麦克风那一路生成
+        }
     }
 
     /// <summary>
@@ -212,6 +277,51 @@ public sealed class LocalRepository : IDisposable
         }
     }
 
+    /// <summary>
+    /// 一次性登记分轨录音的两路路径（麦克风 / 系统声音）。
+    /// 单路录音时传 null 即可（对应列写 NULL）。
+    /// </summary>
+    public void SetSessionAudioTracks(Guid id, string? microphonePath, string? systemPath)
+    {
+        lock (_writeLock)
+        {
+            using var db = NewConnection();
+            db.Open();
+            using var cmd = new SQLiteCommand(
+                "UPDATE sessions SET audio_path = @mic, audio_path_system = @sys WHERE id = @id", db);
+            cmd.Parameters.AddWithValue("@mic", (object?)microphonePath ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@sys", (object?)systemPath ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@id", id.ToString());
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// 读取会话的两路录音路径（供删除清理与排查用）。库中没有记录时返回两个 null。
+    /// 列不存在（旧库未补列成功）同样返回两个 null，不抛异常。
+    /// </summary>
+    public (string? Microphone, string? System) GetSessionAudioTracks(Guid id)
+    {
+        try
+        {
+            using var db = NewConnection();
+            db.Open();
+            using var cmd = new SQLiteCommand(
+                "SELECT audio_path, audio_path_system FROM sessions WHERE id = @id", db);
+            cmd.Parameters.AddWithValue("@id", id.ToString());
+            using var reader = cmd.ExecuteReader();
+            if (!reader.Read())
+                return (null, null);
+            var mic = reader.IsDBNull(0) ? null : reader.GetString(0);
+            var sys = reader.IsDBNull(1) ? null : reader.GetString(1);
+            return (mic, sys);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
     // ── 截图 ──────────────────────────────────────────────
 
     public void SaveScreenshot(Guid sessionId, int seqNo, double timestamp, string type,
@@ -290,6 +400,72 @@ public sealed class LocalRepository : IDisposable
         while (reader.Read())
             list.Add((reader.GetInt32(0), reader.GetDouble(1), reader.GetString(2),
                 reader.IsDBNull(3) ? null : reader.GetString(3)));
+        return list;
+    }
+
+    /// <summary>截图行（含图片路径与 OCR 文本）。<c>OcrText == null</c> 表示"还没识别过"，
+    /// 空串表示"识别过了，图里没有文字"——处理管线据此决定要不要现场补做 OCR。</summary>
+    public List<ScreenshotRow> ListScreenshotsDetailed(Guid sessionId)
+    {
+        using var db = NewConnection();
+        db.Open();
+        using var cmd = new SQLiteCommand(
+            "SELECT seq_no, timestamp, type, image_path, ocr_text FROM screenshots WHERE session_id = @s ORDER BY seq_no", db);
+        cmd.Parameters.AddWithValue("@s", sessionId.ToString());
+        var list = new List<ScreenshotRow>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new ScreenshotRow(
+                reader.GetInt32(0),
+                reader.GetDouble(1),
+                reader.GetString(2),
+                reader.IsDBNull(3) ? "" : reader.GetString(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        }
+        return list;
+    }
+
+    // ── 增量转写块（v0.7 边录边转写）──────────────────────
+    //
+    // 存在的意义：录音期间每整理完 30 秒音频就落一块，因此
+    // · 下课时绝大多数音频已经转写完，课后只需补最后一块；
+    // · 中途崩溃/断电也不会白跑（旧实现一旦失败就是整条音轨重来）；
+    // · 库里缺哪个块号，课后补算就重算哪一个 —— "已完成的块"本身就是有效性记录。
+
+    public void SaveTranscriptChunk(Guid sessionId, RecordingAudioSource source, int chunkIndex, int startSeconds, string text)
+    {
+        lock (_writeLock)
+        {
+            using var db = NewConnection();
+            db.Open();
+            using var cmd = new SQLiteCommand(@"
+                INSERT INTO transcript_chunks (session_id, track, chunk_index, start_seconds, text, created_at)
+                VALUES (@s, @t, @i, @sec, @txt, @ca)
+                ON CONFLICT(session_id, track, chunk_index)
+                DO UPDATE SET text = @txt, start_seconds = @sec, created_at = @ca", db);
+            cmd.Parameters.AddWithValue("@s", sessionId.ToString());
+            cmd.Parameters.AddWithValue("@t", (int)source);
+            cmd.Parameters.AddWithValue("@i", chunkIndex);
+            cmd.Parameters.AddWithValue("@sec", startSeconds);
+            cmd.Parameters.AddWithValue("@txt", text ?? "");
+            cmd.Parameters.AddWithValue("@ca", Now());
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public List<(int Index, string Text)> ListTranscriptChunks(Guid sessionId, RecordingAudioSource source)
+    {
+        using var db = NewConnection();
+        db.Open();
+        using var cmd = new SQLiteCommand(
+            "SELECT chunk_index, text FROM transcript_chunks WHERE session_id = @s AND track = @t ORDER BY chunk_index", db);
+        cmd.Parameters.AddWithValue("@s", sessionId.ToString());
+        cmd.Parameters.AddWithValue("@t", (int)source);
+        var list = new List<(int, string)>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            list.Add((reader.GetInt32(0), reader.IsDBNull(1) ? "" : reader.GetString(1)));
         return list;
     }
 
@@ -387,6 +563,8 @@ public sealed class LocalRepository : IDisposable
             using (var cmd = new SQLiteCommand("DELETE FROM screenshots WHERE session_id = @s", db))
             { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
             using (var cmd = new SQLiteCommand("DELETE FROM notes WHERE session_id = @s", db))
+            { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
+            using (var cmd = new SQLiteCommand("DELETE FROM transcript_chunks WHERE session_id = @s", db))
             { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }
             using (var cmd = new SQLiteCommand("DELETE FROM sessions WHERE id = @s", db))
             { cmd.Parameters.AddWithValue("@s", sid); cmd.ExecuteNonQuery(); }

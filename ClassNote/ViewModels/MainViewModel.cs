@@ -46,15 +46,22 @@ public class MainViewModel : BaseViewModel
     private string _courseFilter = AllCourses;
 
     /// <summary>
-    /// 当前课程筛选条件。"全部课程"表示不限课程；默认按时间倒序展示（列表本身即最近在前）。
+    /// 当前课程筛选条件。"全部课程"表示不限课程（默认）；默认按时间倒序展示（列表本身即最近在前）。
+    ///
+    /// ⚠️ **空值一律回退到「全部课程」**：这个属性是双向绑在筛选下拉上的，
+    /// 而 WPF 的 <c>ComboBox</c> 在 <c>ItemsSource</c> 重建期间会把 <c>SelectedItem</c> 推成 null。
+    /// 如果照单全收，筛选条件就会变成一个"谁都不匹配"的 null —— 表现是列表整片空白、
+    /// 下拉框空着、还挂着"已按科目筛选"的提示，而用户预期的显然是"默认显示所有课程"。
+    /// 另外把「最近记录默认显示所有课程」这条约定固化在这里：任何异常输入都不该让列表空掉。
     /// </summary>
     public string CourseFilter
     {
         get => _courseFilter;
         set
         {
-            if (string.Equals(_courseFilter, value, StringComparison.Ordinal)) return;
-            _courseFilter = value;
+            var next = string.IsNullOrWhiteSpace(value) ? AllCourses : value;
+            if (string.Equals(_courseFilter, next, StringComparison.Ordinal)) return;
+            _courseFilter = next;
             OnPropertyChanged();
             ApplyFilter();
         }
@@ -197,6 +204,12 @@ public class MainViewModel : BaseViewModel
     /// <summary>
     /// 刷新筛选下拉候选：保留「全部课程」在首位，其后是内置课程，最后补上库里出现过的自定义课程名。
     /// 已选中的筛选项始终保留，避免刷新过程中筛选条件被静默重置。
+    ///
+    /// ⚠️ **原地增删，绝不整体清空**：这个集合是筛选下拉的 <c>ItemsSource</c>。
+    /// 旧写法是 <c>Clear()</c> + 全量重加，而 WPF 的 ComboBox 在 ItemsSource 被清空的瞬间会把
+    /// <c>SelectedItem</c> 推成 null（双向绑定再把这个 null 写回 <see cref="CourseFilter"/>）——
+    /// 于是筛选条件一度变成 null、列表整片空白。原地 diff 之后 ItemsSource 永不为空，
+    /// 这条链就断在源头了。
     /// </summary>
     private void RebuildCourseFilters()
     {
@@ -214,9 +227,19 @@ public class MainViewModel : BaseViewModel
         if (wanted.Count == CourseFilters.Count && wanted.SequenceEqual(CourseFilters))
             return;
 
-        CourseFilters.Clear();
-        foreach (var c in wanted)
-            CourseFilters.Add(c);
+        // 先删掉不再需要的（从后往前删，避免下标位移），再在正确位置补齐缺失的
+        for (int i = CourseFilters.Count - 1; i >= 0; i--)
+        {
+            if (!wanted.Contains(CourseFilters[i]))
+                CourseFilters.RemoveAt(i);
+        }
+        for (int i = 0; i < wanted.Count; i++)
+        {
+            if (i >= CourseFilters.Count)
+                CourseFilters.Add(wanted[i]);
+            else if (!string.Equals(CourseFilters[i], wanted[i], StringComparison.Ordinal))
+                CourseFilters.Insert(i, wanted[i]);
+        }
     }
 
     public async Task<Guid?> StartRecordingAsync(string? title = null)
