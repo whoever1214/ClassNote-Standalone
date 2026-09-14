@@ -1,15 +1,20 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ClassNote.Services;
 
 namespace ClassNote.Views;
 
 /// <summary>
-/// 应用设置对话框，分为两个页签：
+/// 应用设置对话框，分为三个页签：
 ///   · API 配置 —— LLM 供应商地址 / API Key / 模型（自动拉取下拉选择）/ 超时 / 连通性测试；
-///   · 录音设置 —— 声音来源（麦克风 / 系统声音 / 混合）与具体设备。
+///   · 录音设置 —— 声音来源（麦克风 / 系统声音 / 混合）与具体设备；
+///   · OCR 识别 —— 截图文字用内置 Windows OCR 还是内网 PaddleOCR 服务，以及地址/请求方式/超时/回退。
 /// 持久化到本地设置文件（AppSettings）。
 /// </summary>
 public partial class SettingsWindow : Window
@@ -76,6 +81,17 @@ public partial class SettingsWindow : Window
         ClassroomTranscriptionCombo.ItemsSource = ClassroomTranscriptionModes.DisplayNames;
         ClassroomTranscriptionCombo.SelectedIndex =
             (int)ClassroomTranscriptionModes.FromStorage(s.ClassroomTranscription);
+
+        // OCR 引擎（v1.1）：同样是"顺序与枚举一一对应"的下拉框
+        OcrEngineCombo.ItemsSource = OcrEngines.DisplayNames;
+        OcrFormatCombo.ItemsSource = OcrEngines.RequestFormatDisplayNames;
+        OcrUrlBox.Text = s.OcrServiceUrl;
+        OcrKeyBox.Text = s.OcrServiceApiKey;
+        OcrTimeoutBox.Text = OcrEngines.NormalizeTimeout(s.OcrTimeoutSeconds).ToString();
+        OcrFallbackCheck.IsChecked = s.OcrFallbackToWindows;
+        OcrFormatCombo.SelectedIndex = (int)OcrEngines.RequestFormatFromStorage(s.OcrRequestFormat);
+        OcrEngineCombo.SelectedIndex = (int)OcrEngines.FromStorage(s.OcrEngine);
+        ApplyOcrVisibility();
 
         // 地址/Key 填好后自动拉取模型列表（防抖，避免边输入边打请求）
         _autoFetchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
@@ -266,6 +282,153 @@ public partial class SettingsWindow : Window
         RecordingTipText.Text += " 录音全程在本地完成，不会上传到任何服务器。";
     }
 
+    // ── OCR 识别 ─────────────────────────────────────────────
+
+    /// <summary>当前选中的 OCR 引擎。</summary>
+    private OcrEngineKind SelectedOcrEngine
+        => OcrEngines.FromStorage(OcrEngines.ToStorage(
+            (OcrEngineKind)Math.Clamp(OcrEngineCombo.SelectedIndex, 0, OcrEngines.DisplayNames.Length - 1)));
+
+    private OcrRequestFormat SelectedOcrFormat
+        => OcrEngines.RequestFormatFromStorage(OcrEngines.ToStorage(
+            (OcrRequestFormat)Math.Clamp(OcrFormatCombo.SelectedIndex, 0, OcrEngines.RequestFormatDisplayNames.Length - 1)));
+
+    private void OcrEngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyOcrVisibility();
+
+    /// <summary>只有选了远程服务才显示地址/密钥/超时等配置；同时把界面上的取舍说清楚。</summary>
+    private void ApplyOcrVisibility()
+    {
+        if (OcrRemoteSection == null) return;   // 构造过程中控件尚未就绪
+
+        bool remote = SelectedOcrEngine == OcrEngineKind.PaddleHttp;
+        OcrRemoteSection.Visibility = remote ? Visibility.Visible : Visibility.Collapsed;
+
+        if (remote && string.IsNullOrWhiteSpace(OcrUrlBox.Text))
+            OcrUrlBox.Text = OcrEngines.DefaultPaddleUrl;
+
+        OcrTipText.Text = remote
+            ? "注意：选中内网服务后，截图会发送到上面这个地址做识别；服务地址与请求方式必须和内网部署一致，" +
+              "否则会一直识别不出文字（开启回退后会改用本机引擎）。识别结果写入本机数据库，笔记生成时只读现成结果。"
+            : "内置引擎完全离线：截图不出本机。识别结果写入本机数据库，笔记生成时只读现成结果。";
+    }
+
+    private int ParsedOcrTimeout()
+    {
+        if (int.TryParse(OcrTimeoutBox.Text?.Trim(), out int seconds)
+            && seconds >= OcrEngines.MinTimeoutSeconds && seconds <= OcrEngines.MaxTimeoutSeconds)
+            return seconds;
+        return OcrEngines.DefaultPaddleTimeoutSeconds;
+    }
+
+    /// <summary>
+    /// 测试识别：拿**真实的一张截图**（最近一次会话的最后一张）去打一遍，没有截图就现场渲染一张测试卡。
+    /// 用真图能一次性验证"地址 + 请求方式 + 鉴权 + 解析"整条链路，比只 ping 一下有用得多。
+    /// </summary>
+    private async void TestOcrButton_Click(object sender, RoutedEventArgs e)
+    {
+        TestOcrButton.IsEnabled = false;
+        TestOcrResultText.Text = "识别中…";
+        TestOcrResultText.Foreground = (Brush)FindResource("TextSecondaryBrush");
+
+        try
+        {
+            var kind = SelectedOcrEngine;
+            if (kind == OcrEngineKind.PaddleHttp && !OcrEngines.IsUsableUrl(OcrUrlBox.Text))
+            {
+                TestOcrResultText.Text = "请先填写合法的服务地址（http/https）。";
+                TestOcrResultText.Foreground = (Brush)FindResource("DangerBrush");
+                return;
+            }
+
+            var sample = TryLoadNewestScreenshot() ?? RenderTestCard();
+            string source = _lastSampleWasRealScreenshot ? "最近一张课堂截图" : "内置测试图";
+
+            IOcrService service = kind == OcrEngineKind.PaddleHttp
+                ? new PaddleOcrService(OcrUrlBox.Text.Trim(), SelectedOcrFormat,
+                    OcrKeyBox.Text.Trim(), ParsedOcrTimeout())
+                : new WindowsOcrService();
+
+            var sw = Stopwatch.StartNew();
+            var text = await service.RecognizeAsync(sample);
+            sw.Stop();
+
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                TestOcrResultText.Text = $"{source}：服务可达，但没有识别出文字（用时 {sw.ElapsedMilliseconds} ms）。" +
+                                         "请确认请求方式与部署方式一致。";
+                TestOcrResultText.Foreground = (Brush)FindResource("DangerBrush");
+                return;
+            }
+
+            var preview = text.Replace('\n', ' ').Trim();
+            if (preview.Length > 40) preview = preview[..40] + "…";
+            TestOcrResultText.Text = $"{source}识别成功：{text.Length} 字，用时 {sw.ElapsedMilliseconds} ms。开头：{preview}";
+            TestOcrResultText.Foreground = (Brush)FindResource("SuccessBrush");
+        }
+        catch (Exception ex)
+        {
+            TestOcrResultText.Text = "识别失败：" + ex.Message;
+            TestOcrResultText.Foreground = (Brush)FindResource("DangerBrush");
+        }
+        finally
+        {
+            TestOcrButton.IsEnabled = true;
+        }
+    }
+
+    private bool _lastSampleWasRealScreenshot;
+
+    /// <summary>取最近一张截图（按修改时间）。没有截图目录/截图时返回 null。</summary>
+    private byte[]? TryLoadNewestScreenshot()
+    {
+        _lastSampleWasRealScreenshot = false;
+        try
+        {
+            var dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "ClassNote", "screenshots");
+            if (!Directory.Exists(dir)) return null;
+
+            var newest = new DirectoryInfo(dir)
+                .EnumerateFiles("*.jpg", SearchOption.AllDirectories)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (newest == null) return null;
+
+            var bytes = File.ReadAllBytes(newest.FullName);
+            _lastSampleWasRealScreenshot = bytes.Length > 0;
+            return bytes.Length > 0 ? bytes : null;
+        }
+        catch
+        {
+            return null;   // 读不到截图不算错误：退回测试卡
+        }
+    }
+
+    /// <summary>没有截图可测时现场画一张测试卡（含中文、英文与数字序列）。</summary>
+    private static byte[] RenderTestCard()
+    {
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, 460, 120));
+            var line1 = new FormattedText("ClassNote OCR 测试", CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, new Typeface("Microsoft YaHei"), 30, Brushes.Black, 96);
+            var line2 = new FormattedText("1 7 3 5 9 4 8    f(n)=min(f(n-1)+1)", CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight, new Typeface("Consolas"), 22, Brushes.Black, 96);
+            dc.DrawText(line1, new Point(18, 14));
+            dc.DrawText(line2, new Point(18, 66));
+        }
+
+        var bitmap = new RenderTargetBitmap(460, 120, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(visual);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var ms = new MemoryStream();
+        encoder.Save(ms);
+        return ms.ToArray();
+    }
+
     // ── 测试连接 ─────────────────────────────────────────────
 
     private async void TestButton_Click(object sender, RoutedEventArgs e)
@@ -310,6 +473,24 @@ public partial class SettingsWindow : Window
             }
         }
 
+        // OCR：选了远程服务就必须有一个合法地址，否则下一次录音会静默退回内置引擎，
+        // 用户以为在用内网服务、实际识别精度没变——这种"看起来生效了"最该在保存时就拦住。
+        var ocrEngine = SelectedOcrEngine;
+        if (ocrEngine == OcrEngineKind.PaddleHttp && !OcrEngines.IsUsableUrl(OcrUrlBox.Text))
+        {
+            MessageBox.Show("选择了内网 PaddleOCR 服务，请填写合法的服务地址（http:// 或 https:// 开头）。",
+                "设置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!int.TryParse(OcrTimeoutBox.Text?.Trim(), out int ocrTimeout)
+            || ocrTimeout < OcrEngines.MinTimeoutSeconds || ocrTimeout > OcrEngines.MaxTimeoutSeconds)
+        {
+            MessageBox.Show($"OCR 请求超时请输入 {OcrEngines.MinTimeoutSeconds}–{OcrEngines.MaxTimeoutSeconds} 之间的整数（秒）。",
+                "设置无效", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         // 路径类输入只接受下拉框里存在的设备，绝不把界面上的任意文本当设备 ID 用
         string micId = "", micName = "";
         if (MicCombo.SelectedIndex > 0 && MicCombo.SelectedIndex < _micIds.Length)
@@ -338,6 +519,12 @@ public partial class SettingsWindow : Window
             s.RecordingOutputDeviceName = outputName;
             s.ClassroomTranscription = ((ClassroomTranscriptionMode)Math.Max(0,
                 ClassroomTranscriptionCombo.SelectedIndex)).ToString();
+            s.OcrEngine = OcrEngines.ToStorage(ocrEngine);
+            s.OcrServiceUrl = OcrUrlBox.Text.Trim();
+            s.OcrRequestFormat = OcrEngines.ToStorage(SelectedOcrFormat);
+            s.OcrServiceApiKey = OcrKeyBox.Text.Trim();
+            s.OcrTimeoutSeconds = ocrTimeout;
+            s.OcrFallbackToWindows = OcrFallbackCheck.IsChecked == true;
         });
         DialogResult = true;
     }

@@ -29,7 +29,10 @@ dotnet build -c Release
   - `SenseVoiceSttService.cs` — 本地语音转文字（SenseVoice-Small ONNX）
   - `FbankExtractor.cs` — fbank 特征提取 + LFR + CMVN（STT 前端）
   - `ISttService.cs` — STT 服务接口
-  - `NoteProcessor.cs` — STT → OCR → LLM 编排管线
+  - `NoteProcessor.cs` — STT → OCR → LLM 编排管线（送模型前对 OCR 素材做字符级降噪）
+  - `WindowsOcrService.cs` / `PaddleOcrService.cs` — 内置 OCR / 内网 PaddleOCR HTTP 服务（多形态响应解析）
+  - `OcrServiceFactory.cs` — 按设置装配 OCR 引擎（含远程失败回退内置 + 冷却）
+  - `OcrTextNormalizer.cs` — OCR 文本规范化（纯函数：逐字空格合并、公式行半角化、保守误识替换）
   - `LocalRepository.cs` — SQLite 数据存储
   - `PdfExportService.cs` — 本地 PDF 导出（QuestPDF）
 - `Controls/` — `SmoothScroll.cs` 全局平滑滚轮（缓动动画、视口比例步长、Shift 横向滚动）
@@ -37,9 +40,11 @@ dotnet build -c Release
 - `Views/` — 页面（MainPage / RecordingPage / NoteViewPage / SettingsWindow / RecordingSetupWindow）
 - `Models/` — 数据模型 + `sensevoice/` 模型文件（model_quant.onnx / tokens.json / am.mvn）
 
-## 应用配置（设置窗口两个页签）
+## 应用配置（设置窗口三个页签）
 
-主页面右上角「设置」→ 分「API 配置」与「录音设置」两个页签，仅存本地 `settings.json`：
+主页面右上角「设置」→ 分「API 配置」「录音设置」「OCR 识别」三个页签，仅存本地 `settings.json`：
 
 - **API 配置**：API 基础地址（默认 DeepSeek）/ API Key / **模型名称（下拉，填好地址 + Key 后自动拉取 `/v1/models`，也可手输）** / 请求超时 / 测试连接。
 - **录音设置**：声音来源（麦克风 / 系统声音 / 混合）与对应设备（麦克风或播放设备），手动录音与定时记录共用。
+- **OCR 识别**：截图文字用内置 Windows OCR 还是**内网 PaddleOCR 服务**（地址 / 请求方式 / 访问密钥 / 超时 / 失败回退 / 测试识别）。
+  两种协议与部署步骤见 [OCR 服务设置与部署](../docs/OCR-服务设置与部署.md)。

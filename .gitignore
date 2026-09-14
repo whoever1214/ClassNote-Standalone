@@ -30,5 +30,16 @@ ClassNote/Models/sensevoice/
 # 精选图已整理进 docs/ui-renders/，不入库）
 *.ui-captures/
 
+# 真实课堂数据（含 STT 转写 / 截图 OCR 原文 / 本机绝对路径 / 老师姓名），禁止入库
+docs/llm-prompts-from-last-session/
+devtools/reference-note/
+devtools/_dump.json
+
+# devtools 根目录的一次性调试与复现脚本（依赖本机数据，按需本地自建，不入库）
+devtools/*.ps1
+devtools/_dump_db.py
+devtools/fake-paddle-ocr-server.py
+devtools/insert-reference-note.py
+
 # 本地 NuGet 配置（含镜像源，按需自建）
 # ClassNote/NuGet.config

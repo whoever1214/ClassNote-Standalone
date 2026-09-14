@@ -60,6 +60,31 @@ public class AppSettingsData
     /// </summary>
     public string ClassroomTranscription { get; set; } = nameof(ClassroomTranscriptionMode.Auto);
 
+    /// <summary>
+    /// 截图 OCR 引擎（内置 Windows OCR / 内网 PaddleOCR 服务），存枚举名。
+    /// 旧 settings.json 没有这个字段 → 反序列化后是空串 → <see cref="OcrEngines.FromStorage"/> 回退内置引擎，
+    /// 与升级前的行为完全一致。
+    /// </summary>
+    public string OcrEngine { get; set; } = nameof(OcrEngineKind.Windows);
+
+    /// <summary>远程 OCR 服务地址（仅 <see cref="OcrEngineKind.PaddleHttp"/> 使用）。</summary>
+    public string OcrServiceUrl { get; set; } = "";
+
+    /// <summary>远程 OCR 的请求编码方式，存枚举名；必须与服务器实际部署方式一致。</summary>
+    public string OcrRequestFormat { get; set; } = nameof(ClassNote.Services.OcrRequestFormat.JsonBase64);
+
+    /// <summary>远程 OCR 服务的访问密钥（可留空；落盘前经 DPAPI 加密，与 LLM Key 同等对待）。</summary>
+    public string OcrServiceApiKey { get; set; } = "";
+
+    /// <summary>远程 OCR 单张截图的请求超时（秒）。</summary>
+    public int OcrTimeoutSeconds { get; set; } = OcrEngines.DefaultPaddleTimeoutSeconds;
+
+    /// <summary>
+    /// 远程 OCR 失败（连不上 / 超时 / 返回结构无法解析）时是否回退到内置 Windows OCR。
+    /// 默认开：宁可用精度差一点的本地结果，也不要因为内网服务抖动而让整节课的截图没有文字。
+    /// </summary>
+    public bool OcrFallbackToWindows { get; set; } = true;
+
     /// <summary>旧字段（v0.4.x 的「定时记录默认麦克风」）：只用于升级时迁移到录音设置，不再写入。</summary>
     [Obsolete("v0.5.0 起改用 RecordingMicId/RecordingMicName；此属性仅用于读取旧 settings.json 做迁移。")]
     public string ScheduleMicId { get; set; } = "";
@@ -141,6 +166,7 @@ public sealed class AppSettings
                 {
                     // 落盘的是 DPAPI 密文，读入时解密为内存明文（旧版明文兼容读取）
                     loaded.LlmApiKey = DpapiKeyProtector.Unprotect(loaded.LlmApiKey);
+                    loaded.OcrServiceApiKey = DpapiKeyProtector.Unprotect(loaded.OcrServiceApiKey);
                     MigrateLegacyFields(loaded);
                     return loaded;
                 }
@@ -179,6 +205,7 @@ public sealed class AppSettings
         // 落盘副本：Key 经 DPAPI 加密后写入，内存中的明文不受影响
         var forDisk = Clone(data);
         forDisk.LlmApiKey = DpapiKeyProtector.Protect(forDisk.LlmApiKey);
+        forDisk.OcrServiceApiKey = DpapiKeyProtector.Protect(forDisk.OcrServiceApiKey);
         var json = JsonSerializer.Serialize(forDisk, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
@@ -198,5 +225,11 @@ public sealed class AppSettings
         RecordingOutputDeviceId = src.RecordingOutputDeviceId,
         RecordingOutputDeviceName = src.RecordingOutputDeviceName,
         ClassroomTranscription = src.ClassroomTranscription,
+        OcrEngine = src.OcrEngine,
+        OcrServiceUrl = src.OcrServiceUrl,
+        OcrRequestFormat = src.OcrRequestFormat,
+        OcrServiceApiKey = src.OcrServiceApiKey,
+        OcrTimeoutSeconds = src.OcrTimeoutSeconds,
+        OcrFallbackToWindows = src.OcrFallbackToWindows,
     };
 }

@@ -82,7 +82,7 @@
 
         <StackPanel Grid.Row="0" Margin="0,0,0,14">
             <TextBlock Text="设置" FontSize="17" FontWeight="Bold" Margin="0,0,0,4" />
-            <TextBlock Text="API 配置用于生成笔记；录音设置决定录下哪些声音。全程本地保存。" FontSize="12"
+            <TextBlock Text="API 配置用于生成笔记；OCR 决定截图文字怎么识别；录音设置决定录下哪些声音。全部配置仅保存在本机。" FontSize="12"
                        Foreground="{StaticResource TextSecondaryBrush}" />
         </StackPanel>
 
@@ -138,7 +138,7 @@
                                            Foreground="{StaticResource PrimaryBrush}" Margin="0,0,10,0"
                                            VerticalAlignment="Top" />
                                 <TextBlock FontSize="12" Foreground="#33415C" TextWrapping="Wrap" MaxWidth="450"
-                                           Text="说明：本软件为单机离线运行，STT 与 OCR 在本地完成，仅 LLM 笔记生成需要 API Key。Key 仅保存在本机（DPAPI 加密）。" />
+                                           Text="说明：语音转写（STT）在本地完成；截图 OCR 默认也用本机引擎离线识别，可在「OCR 识别」页签改为内网自建服务；只有 LLM 笔记生成必须联网。Key 仅保存在本机（DPAPI 加密）。" />
                             </StackPanel>
                         </Border>
 
@@ -203,6 +203,78 @@
                                 <TextBlock x:Name="RecordingTipText" FontSize="12" Foreground="#33415C"
                                            TextWrapping="Wrap" MaxWidth="450"
                                            Text="录音全程在本地完成，不会上传到任何服务器。" />
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ═══════════ 页签三：OCR 识别 ═══════════ -->
+            <TabItem Header="OCR 识别" Style="{StaticResource SettingsTabItemStyle}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Margin="0,0,18,0">
+                    <StackPanel>
+
+                        <TextBlock Text="截图文字识别引擎" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="OcrEngineCombo" Margin="0,0,0,4"
+                                  SelectionChanged="OcrEngineCombo_SelectionChanged" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,14"
+                                   Text="内置引擎离线、零配置，但对中英混排、公式与代码的识别较弱；内网 PaddleOCR 服务精度明显更高，代价是截图会发送到下面这个地址。" />
+
+                        <StackPanel x:Name="OcrRemoteSection" Margin="0,0,0,14">
+                            <TextBlock Text="服务地址" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <TextBox x:Name="OcrUrlBox" Margin="0,0,0,4" />
+                            <TextBlock x:Name="OcrUrlHint" FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,0,0,12"
+                                       Text="例如 http://10.0.0.5:8868/predict/ocr_system（hubserving）或 http://10.0.0.5:8080/ocr（PaddleX / PP-OCRv5 serving）。" />
+
+                            <TextBlock Text="请求方式（必须与服务器的部署方式一致）" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <ComboBox x:Name="OcrFormatCombo" Margin="0,0,0,4" />
+                            <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,0,0,12"
+                                       Text="选错会表现为「能连上但一个字都识别不出」；用下面的「测试识别」可以立刻验证。" />
+
+                            <TextBlock Text="访问密钥（服务没有鉴权就留空）" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <TextBox x:Name="OcrKeyBox" Margin="0,0,0,4" />
+                            <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,0,0,12"
+                                       Text="非空时按 Authorization: Bearer 发送；与 LLM Key 一样以 DPAPI 加密后保存在本机。" />
+
+                            <TextBlock Text="请求超时（秒）" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                            <TextBox x:Name="OcrTimeoutBox" Margin="0,0,0,14" />
+
+                            <CheckBox x:Name="OcrFallbackCheck" Content="服务失败时回退内置 OCR（推荐）"
+                                      Margin="0,0,0,4" />
+                            <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,0,0,14"
+                                       Text="开启后：内网服务连不上/超时就自动改用本机引擎，并且在冷却期内不会再逐张去等超时，避免整节课的截图都在等网络。" />
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <Button x:Name="TestOcrButton" Content="测试识别"
+                                        Style="{StaticResource GhostButtonStyle}"
+                                        Width="96" Height="32" Click="TestOcrButton_Click" />
+                                <TextBlock x:Name="TestOcrResultText" FontSize="12" VerticalAlignment="Center"
+                                           Margin="12,0,0,0" TextWrapping="Wrap" MaxWidth="380"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <Border Background="{StaticResource PrimaryLightBrush}" CornerRadius="10"
+                                Padding="14,10" Margin="0,4,0,4">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                                           Foreground="{StaticResource PrimaryBrush}" Margin="0,0,10,0"
+                                           VerticalAlignment="Top" />
+                                <TextBlock x:Name="OcrTipText" FontSize="12" Foreground="#33415C"
+                                           TextWrapping="Wrap" MaxWidth="450"
+                                           Text="识别结果写入本机数据库，笔记生成时只读现成结果。" />
                             </StackPanel>
                         </Border>
 

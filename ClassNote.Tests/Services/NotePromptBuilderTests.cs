@@ -78,6 +78,43 @@ public class NotePromptBuilderTests
     }
 
     [Fact]
+    public void SegmentItemsSystemPrompt_CarriesOcrNoiseAndSourceRules()
+    {
+        string prompt = NotePromptBuilder.SegmentItemsSystemPrompt;
+
+        // OCR 噪声兜底口径：能确定就整理，确定不了必须原样保留并标注，禁止猜符号
+        Assert.Contains("OCR 不清", prompt);
+        Assert.Contains("禁止猜", prompt);
+        // 来源口径：OCR 内容一律「课件」，避免同一次输出里同为 OCR 却有的标现场有的标课件
+        Assert.Contains("source 一律填「课件」", prompt);
+        // 原有契约不能被挤掉
+        Assert.Contains("coreKnowledge", NotePromptBuilder.SegmentSystemPrompt);
+        Assert.Contains("items", prompt);
+    }
+
+    [Fact]
+    public void SegmentSystemPrompt_AlsoCarriesTheOcrNoiseRules()
+    {
+        // 旧 schema 路径同样吃 OCR 素材，噪声口径不能只在条目 schema 里
+        Assert.Contains("OCR 不清", NotePromptBuilder.SegmentSystemPrompt);
+    }
+
+    [Fact]
+    public void MergeSystemPrompt_MentionsOcrNoiseHandlingForExcerpts()
+    {
+        // 合并阶段会带上原始素材摘录（含 OCR），校对时同样会遇到噪声
+        Assert.Contains("OCR 不清", NotePromptBuilder.MergeSystemPrompt);
+    }
+
+    [Fact]
+    public void BuildSingleNotePrompt_TellsModelHowToHandleOcrNoise()
+    {
+        string prompt = NotePromptBuilder.BuildSingleNotePrompt("高等数学", "转写", "OCR");
+
+        Assert.Contains("OCR 不清", prompt);
+    }
+
+    [Fact]
     public void MaxOutputTokens_IsSetForJsonMode()
     {
         // JSON 模式必须显式给 max_tokens，否则输出可能被截断成不完整 JSON

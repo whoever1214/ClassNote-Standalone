@@ -289,10 +289,13 @@ public sealed class NoteProcessor : INoteProcessor
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(text))
+            // 字符级 OCR 噪声在这里收敛：逐字拆开的空格、公式行的全角符号、高频误识。
+            // 库里存的仍是**原始 OCR**（可追溯、可对拍），规范化只作用于送进提示词的素材。
+            string normalized = OcrTextNormalizer.Normalize(text);
+            if (!string.IsNullOrWhiteSpace(normalized))
             {
                 ocrSb.AppendLine($"[{shot.Type} @ {FormatTime(shot.Timestamp)}]");
-                ocrSb.AppendLine(text);
+                ocrSb.AppendLine(normalized);
             }
         }
         return ocrSb.ToString();

@@ -114,11 +114,20 @@ public static class Program
         page3.Loaded += (_, _) => { HideWebView(page3); };
         RenderHostWindow(page3, Path.Combine(outDir, "m3-note.png"), 1040, 680);
 
-        // 4. SettingsWindow：两个页签各渲染一张（API 配置 / 录音设置）。
+        // 4. SettingsWindow：三个页签各渲染一张（API 配置 / 录音设置 / OCR 识别）。
         //    每次都用新实例：WPF 窗口 Close() 之后无法再次 Show()。
         RenderHostWindow(new SettingsWindow(), Path.Combine(outDir, "m4-settings-api.png"), 600, 620);
         RenderHostWindow(new SettingsWindow(), Path.Combine(outDir, "m4b-settings-recording.png"), 600, 620,
             inspect: null, postShow: SelectTab(1));
+        // OCR 页签两种状态：内置引擎（远程配置收起）/ 内网 PaddleOCR（远程配置展开）
+        RenderHostWindow(new SettingsWindow(), Path.Combine(outDir, "m4c-settings-ocr.png"), 600, 620,
+            inspect: null, postShow: SelectTab(2));
+        RenderHostWindow(new SettingsWindow(), Path.Combine(outDir, "m4d-settings-ocr-remote.png"), 600, 620,
+            inspect: null, postShow: window =>
+            {
+                SelectTab(2)(window);
+                if (window.FindName("OcrEngineCombo") is ComboBox combo) combo.SelectedIndex = 1;
+            });
 
         // 5. RecordingSetupWindow
         var setupAudio = new AudioService();

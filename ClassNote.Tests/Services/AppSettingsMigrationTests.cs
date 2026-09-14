@@ -106,6 +106,48 @@ public class AppSettingsMigrationTests
     }
 
     [Fact]
+    public void LegacySettings_WithoutOcrFields_KeepUsingBuiltInOcr()
+    {
+        // 升级前落盘的设置里没有 OCR 字段：必须仍然用内置引擎、默认开启回退，
+        // 否则升级后用户会在不知情的情况下把截图发往一个空地址。
+        const string legacy = """
+        {
+          "LlmApiKey": "dpapi:xxx",
+          "LlmModel": "deepseek-chat",
+          "RecordingSource": "Microphone"
+        }
+        """;
+
+        var data = Deserialize(legacy);
+
+        Assert.Equal(OcrEngineKind.Windows, OcrEngines.FromStorage(data.OcrEngine));
+        Assert.Equal("", data.OcrServiceUrl);
+        Assert.Equal(OcrRequestFormat.JsonBase64, OcrEngines.RequestFormatFromStorage(data.OcrRequestFormat));
+        Assert.Equal(OcrEngines.DefaultPaddleTimeoutSeconds, data.OcrTimeoutSeconds);
+        Assert.True(data.OcrFallbackToWindows);
+    }
+
+    [Fact]
+    public void OcrSettings_RoundTripThroughStorageNames()
+    {
+        // 存枚举名而不是界面文案：改文案不会让用户的选择失效（与录音来源同一套做法）
+        var data = new AppSettingsData
+        {
+            OcrEngine = OcrEngines.ToStorage(OcrEngineKind.PaddleHttp),
+            OcrRequestFormat = OcrEngines.ToStorage(OcrRequestFormat.PaddleXServing),
+            OcrServiceUrl = "http://10.0.0.5:8080/ocr",
+            OcrTimeoutSeconds = 45,
+            OcrFallbackToWindows = false,
+        };
+
+        Assert.Equal(OcrEngineKind.PaddleHttp, OcrEngines.FromStorage(data.OcrEngine));
+        Assert.Equal(OcrRequestFormat.PaddleXServing, OcrEngines.RequestFormatFromStorage(data.OcrRequestFormat));
+        Assert.Equal("http://10.0.0.5:8080/ocr", data.OcrServiceUrl);
+        Assert.Equal(45, data.OcrTimeoutSeconds);
+        Assert.False(data.OcrFallbackToWindows);
+    }
+
+    [Fact]
     public void ToRecordingConfig_MapsSettingsToCaptureConfig()
     {
         var data = new AppSettingsData
