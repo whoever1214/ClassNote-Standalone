@@ -180,7 +180,11 @@ public partial class MainPage : Page
 
     private void SessionList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        // 双击勾选框用于切换选择状态，不应触发打开笔记
+        // 双击勾选框用于切换选择状态，不应触发打开笔记。
+        // ⚠️ 这里的 e.OriginalSource 可能是 **Run**（时间戳列是 TextBlock + 显式 <Run>，
+        //    命中测试会把行内元素本身交出来）。Run 不是 Visual，用
+        //    VisualTreeHelper.GetParent 向上走会抛「Run 不是 Visual 或 Visual3D」——
+        //    必须走 Controls.VisualTreeWalk（分派到内容树的父级查询）。
         if (e.OriginalSource is DependencyObject src && FindVisualParent<CheckBox>(src) != null)
         {
             e.Handled = true;
@@ -382,13 +386,5 @@ public partial class MainPage : Page
     }
 
     private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
-    {
-        while (child != null)
-        {
-            if (child is T match)
-                return match;
-            child = System.Windows.Media.VisualTreeHelper.GetParent(child);
-        }
-        return null;
-    }
+        => Controls.VisualTreeWalk.FindAncestor<T>(child);
 }

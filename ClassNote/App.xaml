@@ -2,7 +2,8 @@
 <Application x:Class="ClassNote.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:conv="clr-namespace:ClassNote.Converters">
+             xmlns:conv="clr-namespace:ClassNote.Converters"
+             xmlns:controls="clr-namespace:ClassNote.Controls">
     <Application.Resources>
 
         <!-- ═══════════════════ 值转换器 ═══════════════════ -->
@@ -542,11 +543,13 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Margin" Value="0,2" />
             <Setter Property="Cursor" Value="Hand" />
+            <!-- 触摸屏：按住 0.55 秒 = 右键（WPF 在 Win10 桌面模式不会自己把长按翻译成右键） -->
+            <Setter Property="controls:TouchLongPress.IsEnabled" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListViewItem">
                         <Border x:Name="Bd" Background="Transparent" CornerRadius="9"
-                                Padding="8,4" Margin="4,2" MinHeight="46" SnapsToDevicePixels="True">
+                                Padding="8,4" Margin="4,2" MinHeight="52" SnapsToDevicePixels="True">
                             <ContentPresenter />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -571,6 +574,11 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+            <!-- 触摸屏：单指上下拖动即可滚动列表。
+                 WPF 默认 PanningMode=None，手指拖动只会被"提升"为鼠标事件而不滚动，
+                 用户只能去拖那根 9px 宽的滚动条 —— 这就是"触控支持非常差"的主因之一。 -->
+            <Setter Property="ScrollViewer.PanningMode" Value="VerticalOnly" />
+            <Setter Property="ScrollViewer.PanningDeceleration" Value="0.001" />
         </Style>
 
         <!-- 隐藏 GridView 表头，让会话列表呈现纯卡片式行 -->
@@ -581,7 +589,9 @@
         <!-- ═══════════════════ 滚动条 ═══════════════════ -->
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Width" Value="9" />
+            <!-- 触摸屏：9px 太窄，手指按不住（滚轮/拖动都够不着）；加宽到 16px，
+                 拇指滑块本身仍保持细条观感（Margin 内缩）。 -->
+            <Setter Property="Width" Value="16" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
@@ -596,7 +606,7 @@
                                                   Opacity="0" Focusable="False" IsTabStop="False" />
                                 </Track.IncreaseRepeatButton>
                                 <Track.Thumb>
-                                    <Thumb x:Name="PART_Thumb" Margin="2,0">
+                                    <Thumb x:Name="PART_Thumb" Margin="4,0">
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
                                                 <Border x:Name="ThumbBorder" Background="#BDBDC3CF" CornerRadius="4" />

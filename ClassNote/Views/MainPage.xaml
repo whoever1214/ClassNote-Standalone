@@ -20,7 +20,8 @@
             <Setter Property="FontSize" Value="13" />
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             <Setter Property="Padding" Value="12,0" />
-            <Setter Property="Height" Value="34" />
+            <!-- 触摸屏：菜单项高度按微软触控建议取 44px（原来 34px，手指常常点滑到相邻项） -->
+            <Setter Property="Height" Value="44" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="MenuItem">

@@ -18,6 +18,7 @@ TestResults/bench/*
 !TestResults/reports/
 TestResults/reports/*
 !TestResults/reports/full-chain-test-report.md
+!TestResults/reports/现场问题根因报告-20260916.md
 *.log
 
 # 分发包（体积大，不入库）

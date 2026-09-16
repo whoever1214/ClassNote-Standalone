@@ -3,7 +3,7 @@
 > 一款**纯客户端**课堂笔记工具：课堂录音 + 自动截屏 + 本地语音转文字（STT）+ 本地图片识别（OCR）+ LLM 生成结构化笔记。
 > 无需任何服务端，开箱即用。
 
-![version](https://img.shields.io/badge/version-1.0.1-blue)
+![version](https://img.shields.io/badge/version-1.0.2-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![.NET](https://img.shields.io/badge/.NET-8.0-512BD4)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -16,7 +16,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| [`ClassNote-1.0.1-setup-x64.exe`](https://github.com/whoever1214/ClassNote-Standalone/releases/download/v1.0.1/ClassNote-1.0.1-setup-x64.exe) | Windows x64 安装程序（约 275 MB，**自包含运行时，免装 .NET**） |
+| [`ClassNote-1.0.2-setup-x64.exe`](https://github.com/whoever1214/ClassNote-Standalone/releases/download/v1.0.2/ClassNote-1.0.2-setup-x64.exe) | Windows x64 安装程序（约 275 MB，**自包含运行时，免装 .NET**） |
 
 **系统要求**
 
@@ -95,7 +95,7 @@ build-installer.bat
 ```
 
 脚本会依次执行：自包含发布（`win-x64`）→ 校验关键载荷文件 → 用 Inno Setup 编译。
-产物：`dist/ClassNote-1.0.1-setup-x64.exe`。
+产物：`dist/ClassNote-1.0.2-setup-x64.exe`。
 
 > **发布前版本号维护（易漏点）**：版本号是**手写常量**，需同步 3 处 ——
 > `ClassNote/ClassNote.csproj`（`Version`/`FileVersion`/`AssemblyVersion`）、
@@ -192,6 +192,7 @@ ClassNote-Standalone/
 
 | 版本 | 主要变更 |
 |------|----------|
+| **v1.0.2** | **一体机（Win10 触摸屏）现场问题修复**。①**点历史记录崩溃**：时间戳列改成 `TextBlock + <Run>` 后，命中测试把行内元素 `Run` 当作 `e.OriginalSource`，而 `Run` 不是 Visual——`VisualTreeHelper.GetParent` 直接抛「System.Windows.Documents.Run 不是 Visual 或 Visual3D」，且被全局异常兜底吞掉；新增 `Controls/VisualTreeWalk`（分派到内容树的父级查询）统一处理，`MainPage` 改用它。②**结束录音卡死数秒**：`IncrementalTranscriptionSession.Dispose()` 对**每一路**音轨 `WaitForCompletion(2000)`，而它是在 UI 线程上被调用的——单路 2 秒、双路（默认配置）**实测 4.01 秒**界面完全无响应，期间所有 `DispatcherTimer`（课表调度、"到点自动下课"看门狗）一并停摆；现改为只发信号不等待（尾部补算本就由课后管线在后台等，预算 120 秒），并把录音页卸载时的重释放整体移到后台线程（实测 4012ms → 0ms）。③**跨课错记**：下一节到点时若上一节还在录音，原实现**整节跳过且不重试**，于是「语文课的内容录进物理那条记录，物理看着有、语文永远空白」；现先结束上一节再开始本节，停不下来才留给下个调度周期重试（决定逻辑抽为 `Services/ScheduledRecordingHandoff`）。④**触摸屏长按 = 右键**：全仓此前 0 处触摸代码，而 WPF 桌面模式不会把长按翻译成右键，等于触摸下**无法唤出**查看笔记/导出 PDF/删除；新增 `Controls/TouchLongPress` 附加行为（550ms、14px 容差、只认触摸触笔）。⑤**触控体验**：列表开启 `PanningMode`（此前默认 `None`，手指**拖不动**列表）、滚动条 9px→16px、菜单项 34px→44px、行高 46→52。另新增 `Services/UiWatchdog`：UI 线程卡顿 ≥2 秒即把"卡了多久 + 当时在做什么"写进 `classnote-crash.log`，供现场取证。单测 **358 → 435 项全部通过**；复现器见 `devtools/BugRepro`。 |
 | **v1.0.1** | **截图 OCR 可选内网 PaddleOCR 服务（新增）**：设置新增「OCR 识别」页签——内置 Windows OCR（默认，离线）与**内网自建 PaddleOCR 服务**二选一，填地址 / 请求方式 / 访问密钥（DPAPI 加密）/ 超时，带**「测试识别」**（拿最近一张真实截图跑一遍并报告字数与耗时）。支持两代官方协议：PaddleOCR 2.x hubserving（`/predict/ocr_system`，`{"images":[base64]}`）与 PaddleOCR 3.x / PaddleX serving（`/ocr`，`{"file":base64,"fileType":1,"visualize":false}`），响应兼容多种形态并**按文字框坐标还原阅读顺序**。远程失败自动**回退内置引擎并进入 2 分钟冷却**（避免"每张截图都等一次超时"），空白幻灯片返回空文本不算失败。**OCR 文本确定性降噪**：送进提示词前合并逐字空格、公式行全角转半角并紧排运算符、`m 主 n`→`min`、公式行里被认成汉字「一」的减号还原为 `-`（**绝不合并 `1 7 3 5 9 4 8` 这类数字序列**）；真实记录实测 OCR 素材 **18735 → 12068 字（−35.6%）**。提示词同步补两条：残余噪声「确定不了就原样保留并标注**OCR 不清**，禁止猜符号」、OCR 条目 `source` 一律填「课件」。配套：单元测试新增 30+ 条（协议/解析/回退/降噪/设置迁移/提示词契约），合计 **422 项全部通过**；新增 `devtools/fake-paddle-ocr-server.py` + `check-paddle-ocr-client.ps1` 端到端联调工具与 [OCR 服务设置与部署](docs/OCR-服务设置与部署.md) 文档 |
 | **v1.0.0（正式版）** | **首个正式发布版本**。整合 v0.4.0 ～ v0.6.0 的全部能力（定时记录 · 每周课表、主页改版、多声音来源与分轨录音、笔记分段生成），并包含 v0.7 阶段**已实测完成**的提速与修复：**边录边转写**（90 分钟双路课堂的课后转写等待从十几到几十分钟降到**一块以内**，实测 3.6 秒，且转写文本与整文件转写**逐字相同**）、**课堂资源让路**（STT 固定半核 + 全屏放映/视频播放/电池供电自动降速，课堂期间平均 CPU 约 5.4%）、**模型常驻单例 + 开录预热 + 闲置释放**、**公式渲染修复**、**PDF 导出修复**、**计时修复**、**科目筛选修复**、**停录不再阻塞**、**转写与 OCR 并行**、**LLM 连接复用**。单元测试 **358 项全部通过**。各项明细见下一行 v0.7 条目 |
 | **v0.7（内容已并入 v1.0.0）** | **公式渲染修复（重要）**：笔记页的 MathJax 分隔符此前被误配成圆括号/方括号，导致**每一对括号都被当成公式**——`d[i][j]` 显示成「d / i / j」三行居中大字，`f(n-1)+1` 变成 `f𝑛 − 1 + 1`（括号消失、变量变斜体，数学语义被改）。真实笔记实测：修复前 **59 个假公式**、修复后 **0 个**；**渲染侧修复，已有笔记升级后直接正常显示，无需重新生成**。同时把"Markdig 输出 / MathJax 分隔符 / CSS 选择器"三段收进 `NoteHtmlRenderer` 单一实现以防再次失配，并新增真跑 WebView2 的渲染校验工具 `devtools/NoteRender`。**PDF 导出修复**：`**加粗**`、`$公式$`、反引号不再原样印进 PDF，编号列表（`1.`/`2)`/`1、`）终于能被识别（旧正则转义丢失、从未生效）。**计时修复**：录音时长/截图时间戳改用墙钟，修复此前约 4% 的偏短（实测 1314 秒被记成 1262 秒）。**科目筛选修复**：最近记录此前可能整片空白（刷新候选集时 WPF 把 `SelectedItem` 推成 null 并写回筛选条件 → "筛一个不存在的科目"）；现在候选集原地增删、空值回退「全部课程」，并有用真 ComboBox 复现机理的回归测试。**模型闲置释放**：闲置 10 分钟后把约 600MB 还给系统（实测 WS 551MB → 64MB），下次录音前自动预热，用户无感。**提示词**新增"公式用 `$...$` 包裹、只补分隔符不改内容"。**笔记提速：边录边转写**。录音期间按 30 秒一块增量转写并落库（新表 `transcript_chunks`），下课时只补最后不足一块的部分——90 分钟双路课堂的"课后转写等待"从十几到几十分钟降到**一块以内（实测 3.6 秒）**，且转写文本与整文件转写**逐字相同**（`devtools/NoteBench` 真机对拍：95 秒素材 4 块逐块无差异；真实 21.9 分钟双路课堂 **88 块全部在课堂内转完**）。**课堂资源让路**：STT 的 ONNX 会话固定只用一半逻辑核并关闭线程池自旋，课堂期间按占空比推进；检测到**全屏放映 / 视频播放（截图变化检测）/ 电池供电**时自动降速，可在设置中按 关闭 / 自动 / 极速 三档选择。**模型常驻单例 + 开录预热 + 闲置释放**（消除每次会话 6–33 秒的模型重载，修掉旧版跨会话内存累积，并在闲置 10 分钟后把约 600MB 还给系统——实测 WS 551MB → 64MB，重载对用户不可见）。**停录不再阻塞**：音频归档、结束会话、处理管线全部移到后台，点「结束录音」立即返回。**转写与 OCR 并行**、截图 OCR 随录随做并在提示词里去重。**LLM 调用复用连接**（旧版每次调用都新建 HttpClient，等于每次重做 TCP+TLS 握手）。新增实测工具 `devtools/NoteBench` 与 `devtools/NoteRender`。详见 [提速方案](docs/笔记生成提速方案-v0.7.md)、[提速实测报告](TestResults/bench/v0.7-提速实测报告.md)、[主回路审计报告](TestResults/bench/v0.7-主回路审计报告.md)。 |

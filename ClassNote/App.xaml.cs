@@ -48,6 +48,11 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // UI 线程卡顿看门狗：把"卡了多久、当时在做什么"写进 classnote-crash.log。
+        // 现场问题（升级后反复卡死）最缺的就是这个证据，没有它排查只能靠猜。
+        UiWatchdog.SetPhase("启动");
+        UiWatchdog.Start();
+
         // 单实例：第二实例唤醒首实例后退出（首实例驻留托盘时用户从托盘/信号唤出）
         _singleInstanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var createdNew);
         if (!createdNew)

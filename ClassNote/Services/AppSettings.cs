@@ -85,6 +85,15 @@ public class AppSettingsData
     /// </summary>
     public bool OcrFallbackToWindows { get; set; } = true;
 
+    /// <summary>
+    /// 触摸屏优化开关（长按 = 右键、单指拖动滚动、加宽滚动条与菜单项）。
+    ///
+    /// 默认 **true**：海康威视一体机这类"触摸是唯一输入方式"的设备上，
+    /// 关掉就等于把右键菜单（查看笔记 / 导出 PDF / 删除）彻底藏起来——没有鼠标就再也点不到。
+    /// 普通鼠标电脑上这些行为没有任何副作用（长按只认触摸/触笔，不碰鼠标右键），因此默认开。
+    /// </summary>
+    public bool TouchOptimizations { get; set; } = true;
+
     /// <summary>旧字段（v0.4.x 的「定时记录默认麦克风」）：只用于升级时迁移到录音设置，不再写入。</summary>
     [Obsolete("v0.5.0 起改用 RecordingMicId/RecordingMicName；此属性仅用于读取旧 settings.json 做迁移。")]
     public string ScheduleMicId { get; set; } = "";
@@ -231,5 +240,6 @@ public sealed class AppSettings
         OcrServiceApiKey = src.OcrServiceApiKey,
         OcrTimeoutSeconds = src.OcrTimeoutSeconds,
         OcrFallbackToWindows = src.OcrFallbackToWindows,
+        TouchOptimizations = src.TouchOptimizations,
     };
 }

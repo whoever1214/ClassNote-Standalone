@@ -310,6 +310,7 @@ public class RecordingViewModel : BaseViewModel
         // v0.7 改动：以前这里 awaited 了"复制音频文件"（90 分钟单路 172MB、双路 344MB）
         // 与两次网络/DB 收尾，用户点"结束录音"后要盯着转圈 1–10 秒；现在这些都在后台，
         // 且与转写管线并行（管线读的是 %TEMP% 里的原始文件，不依赖归档副本）。
+        UiWatchdog.SetPhase("停止采集（写盘收尾）");
         RecordingAudio? audio;
         try
         {
@@ -321,6 +322,7 @@ public class RecordingViewModel : BaseViewModel
             return Task.CompletedTask;
         }
 
+        UiWatchdog.SetPhase("后台整理笔记");
         _backgroundProcessing = Task.Run(() => FinalizeAsync(audio));
         StatusText = "已停止";
         return Task.CompletedTask;
@@ -543,6 +545,13 @@ public class RecordingViewModel : BaseViewModel
     }
 
     public byte[] GetAudioData() => _audio.GetFileBytes();
+
+    /// <summary>
+    /// 只停掉秒级计时器。必须在**创建它的那个线程**（UI 线程）上调用，因此从
+    /// <see cref="Dispose"/> 里拆出来单独暴露：页面卸载时先把计时器停掉，
+    /// 其余释放动作就能整体挪到后台线程执行（见 RecordingPage.Page_Unloaded）。
+    /// </summary>
+    public void StopElapsedTimer() => _elapsedTimer?.Stop();
 
     public void Dispose()
     {

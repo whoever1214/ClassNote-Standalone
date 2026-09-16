@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using ClassNote.Models;
 using ClassNote.Services;
 using ClassNote.Views;
 using WinForms = System.Windows.Forms;
@@ -141,12 +142,19 @@ public partial class MainWindow : Window
     private async Task StartScheduledRecordingAsync(ScheduleOccurrence occ)
     {
         var entry = occ.Entry;
+
+        // 本节已经开始，但上一节还没停（看门狗被卡住的 UI 线程推迟、或用户手动开始了录音）：
+        // **必须先把上一节停掉**，否则这一整节会被跳过，课程内容就录进上一节那条会话里，
+        // 课表上这一节永远没有记录。现场表现正是：
+        // 「语文课记录在上节物理课上，且物理课记录丢失」（两节课相差 1 小时）。
+        // 决定逻辑抽到 ScheduledRecordingHandoff，由单测锁住各分支。
+        var previousStopped = true;
         if (IsRecordingActive)
-        {
-            ShowTrayBalloonIfHidden("定时记录已跳过",
-                $"「{entry.Course}」到点自动开始时正在录音，本次跳过。");
-            return;
-        }
+            previousStopped = await StopActiveRecordingForNextLessonAsync(entry);
+
+        var decision = ScheduledRecordingHandoff.Decide(IsRecordingActive, previousStopped);
+        if (!ScheduledRecordingHandoff.ShouldStartNewLesson(decision))
+            return;   // 上一节停不下来：本次不启动，等下一个调度周期重试
 
         // 无可用麦克风时不创建空会话，跳过并在托盘提示（仅麦克风来源强依赖采集端点）
         var settings = AppSettings.Instance.Snapshot();
@@ -180,6 +188,51 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             ShowTrayBalloonIfHidden("定时记录启动失败", $"{entry.Course}：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 下一节到点时，把仍在进行的上一节录音结束掉（含落盘与状态推进）。
+    /// 返回 true 表示"现在确实没有在录音了"，可以安全开始新的一节。
+    ///
+    /// 为什么要有这个方法：「到点自动下课」是录音页上的 <see cref="DispatcherTimer"/> 看门狗，
+    /// 而调度器也是 DispatcherTimer —— 只要 UI 线程被占住（历史实现里结束录音会阻塞 2–4 秒，
+    /// 见 RecordingPage.Page_Unloaded），这两个定时器就会一起被推迟，录音于是跨进下一节课。
+    /// 与其事后再补救，不如在"新一节真正要开始"的这一刻兜底收尾：这样每一节课都有自己的一条记录，
+    /// 课程名也不会错位。
+    /// </summary>
+    private async Task<bool> StopActiveRecordingForNextLessonAsync(ScheduleEntry next)
+    {
+        if (MainFrame.Content is not RecordingPage page)
+            return true;   // 已经不在录音页（并发收尾完成），可以继续
+
+        try
+        {
+            // 给收尾留出时间，但**不能无限等**：调度器每 10 秒会再评估一次，
+            // 本次放弃下一轮还有机会（因为"跳过"不再写进 ScheduleEngine 的已触发记忆）。
+            var stop = page.RequestStopAsync();
+            var finished = await Task.WhenAny(stop, Task.Delay(TimeSpan.FromSeconds(20)));
+            if (finished != stop)
+            {
+                ShowTrayBalloonIfHidden("定时记录已跳过",
+                    $"上一节录音仍在收尾，未开始「{next.Course}」；10 秒后会再试一次。");
+                return false;
+            }
+
+            await stop;
+
+            ShowTrayBalloonIfHidden("已结束上一节录音",
+                $"「{next.Course}」到点，上一节录音已自动结束并转入后台整理。");
+
+            // 收尾是异步的：事件处理器从 UI 队列退回后 IsRecordingActive 才会变成 false。
+            // 让出一次消息循环再判断，避免"刚停完又被自己判定为正在录音"。
+            await Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
+            return !IsRecordingActive;
+        }
+        catch (Exception ex)
+        {
+            ShowTrayBalloonIfHidden("定时记录启动失败", $"结束上一节录音时出错：{ex.Message}");
+            return false;
         }
     }
 

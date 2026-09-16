@@ -1,11 +1,11 @@
 ; ================================================================
 ; ClassNote 单机版 — Windows 安装脚本 (Inno Setup 6)
-; 产物: dist\ClassNote-1.0.1-setup-x64.exe (自包含 x64, 免装 .NET)
+; 产物: dist\ClassNote-1.0.2-setup-x64.exe (自包含 x64, 免装 .NET)
 ; 用法: ISCC.exe installer\ClassNote.iss
 ; ================================================================
 #define MyAppName "ClassNote 课堂笔记"
 #define MyAppNameEn "ClassNote"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "ClassNote"
 #define MyAppExeName "ClassNote.exe"
 

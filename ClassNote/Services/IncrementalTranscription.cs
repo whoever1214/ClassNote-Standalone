@@ -359,6 +359,20 @@ public sealed class IncrementalTranscriptionSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// 释放本会话：**只做标记与信号，绝不等待工作线程**。
+    ///
+    /// ⚠️ 历史实现这里对每路调用 <c>worker.WaitForCompletion(2000)</c>，而本方法是从
+    /// UI 线程（<c>RecordingPage.Page_Unloaded</c> → <c>RecordingViewModel.Dispose</c>）调用的：
+    /// 两路来源（麦克风 + 系统声音）就是 **4 秒** UI 线程硬阻塞，实测可复现
+    /// （<c>devtools/BugRepro ui-block</c>：1 路 2.00s / 2 路 4.01s，期间 DispatcherTimer 同步被推迟，
+    /// 即界面完全无响应）。这类"结束录音时卡死几秒"正是用户报告的现场问题。
+    ///
+    /// 那个等待本来也是多余的：尾部补算由课后管线负责，
+    /// <see cref="NoteProcessor.ProcessAsync"/> 里已经有
+    /// <c>WaitForCompletion(TimeSpan.FromSeconds(120))</c> —— 在那里等（后台线程、2 分钟预算）
+    /// 才是正确的等法。这里只保证"不会再有新数据进来"，工作线程处理完尾部自行退出。
+    /// </summary>
     public void Dispose()
     {
         lock (_lock)
@@ -368,8 +382,6 @@ public sealed class IncrementalTranscriptionSession : IDisposable
             _disposed = true;
         }
         SignalInputComplete();
-        foreach (var worker in _workers.Values)
-            worker.WaitForCompletion(2000);
     }
 }
 

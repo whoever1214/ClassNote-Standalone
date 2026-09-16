@@ -82,6 +82,10 @@ public partial class SettingsWindow : Window
         ClassroomTranscriptionCombo.SelectedIndex =
             (int)ClassroomTranscriptionModes.FromStorage(s.ClassroomTranscription);
 
+        // 触摸屏优化（一体机 / 触摸屏）：默认开。关掉后长按不再等同于右键，
+        // 因此文案里必须说清楚代价（没有鼠标就再也调不出右键菜单）。
+        TouchOptimizationsCheck.IsChecked = s.TouchOptimizations;
+
         // OCR 引擎（v1.1）：同样是"顺序与枚举一一对应"的下拉框
         OcrEngineCombo.ItemsSource = OcrEngines.DisplayNames;
         OcrFormatCombo.ItemsSource = OcrEngines.RequestFormatDisplayNames;
@@ -525,6 +529,7 @@ public partial class SettingsWindow : Window
             s.OcrServiceApiKey = OcrKeyBox.Text.Trim();
             s.OcrTimeoutSeconds = ocrTimeout;
             s.OcrFallbackToWindows = OcrFallbackCheck.IsChecked == true;
+            s.TouchOptimizations = TouchOptimizationsCheck.IsChecked == true;
         });
         DialogResult = true;
     }
