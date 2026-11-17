@@ -65,6 +65,36 @@ public class AppSettingsData
     /// 旧 settings.json 没有这个字段 → 反序列化后是空串 → <see cref="OcrEngines.FromStorage"/> 回退内置引擎，
     /// 与升级前的行为完全一致。
     /// </summary>
+    /// <summary>
+    /// 截图送进模型的方式（见 <see cref="ScreenshotInputMode"/>）：Ocr / Vision / Both，存枚举名。
+    /// 默认 <b>Vision</b>：图片直送多模态模型，公式、化学式、板书图形不会被本地 OCR 撕碎。
+    /// 旧 settings.json 没有这个字段 → 反序列化后是空串 → 由 <see cref="ScreenshotInputModes.FromStorage"/>
+    /// 回退到 Vision（与"新版本默认用图片"的设计一致）。
+    /// </summary>
+    public string ScreenshotInput { get; set; } = nameof(ScreenshotInputMode.Vision);
+
+    /// <summary>
+    /// 原料留存天数：非收藏会话的**音频 / 截图 / 转写块**超过这个天数就自动清理
+    /// （笔记始终保留）。0 = 永不清理。默认 7 天：一节 40 分钟课的原料约 75 MB + 50 MB 截图，
+    /// 一学期下来能到几十 GB。
+    /// </summary>
+    public int ContentRetentionDays { get; set; } = 7;
+
+    /// <summary>单节课最多送几张截图（选图上限，见 <see cref="ScreenshotSelector"/>）。</summary>
+    public int VisionMaxImagesPerNote { get; set; } = 30;
+
+    /// <summary>送进模型前把截图长边缩到这个像素（0 = 不缩放）。4K 原图 30 张就有 30–60 MB，会撞请求体上限。</summary>
+    public int VisionMaxEdgePx { get; set; } = 1600;
+
+    /// <summary>图片重新编码的 JPEG 质量（1–100）。80 足够看清课件小字，单张约 120–180 KB。</summary>
+    public int VisionJpegQuality { get; set; } = 80;
+
+    /// <summary>
+    /// 截图去重阈值：相邻两帧 pHash 汉明距离不超过它就算"同一屏"，只留最后一帧。
+    /// 实测真实数据里 ≤8 覆盖 73% 的相邻帧；调大更省，但可能丢掉"只改了一个字"的板书。
+    /// </summary>
+    public int VisionDedupThreshold { get; set; } = ScreenshotSelector.DefaultDedupThreshold;
+
     public string OcrEngine { get; set; } = nameof(OcrEngineKind.Windows);
 
     /// <summary>远程 OCR 服务地址（仅 <see cref="OcrEngineKind.PaddleHttp"/> 使用）。</summary>
@@ -234,6 +264,12 @@ public sealed class AppSettings
         RecordingOutputDeviceId = src.RecordingOutputDeviceId,
         RecordingOutputDeviceName = src.RecordingOutputDeviceName,
         ClassroomTranscription = src.ClassroomTranscription,
+        ContentRetentionDays = src.ContentRetentionDays,
+        ScreenshotInput = src.ScreenshotInput,
+        VisionMaxImagesPerNote = src.VisionMaxImagesPerNote,
+        VisionMaxEdgePx = src.VisionMaxEdgePx,
+        VisionJpegQuality = src.VisionJpegQuality,
+        VisionDedupThreshold = src.VisionDedupThreshold,
         OcrEngine = src.OcrEngine,
         OcrServiceUrl = src.OcrServiceUrl,
         OcrRequestFormat = src.OcrRequestFormat,

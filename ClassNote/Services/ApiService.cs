@@ -48,6 +48,15 @@ public class ApiService : IApiService
         return Task.CompletedTask;
     }
 
+    public Task SetSessionFavoriteAsync(Guid id, bool favorite)
+    {
+        _repo.SetSessionFavorite(id, favorite);
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> IsSessionFavoriteAsync(Guid id)
+        => Task.FromResult(_repo.IsSessionFavorite(id));
+
     public Task UploadScreenshotAsync(Guid sessionId, int seqNo, double timestamp,
         string type, byte[] imageData, string? url)
     {

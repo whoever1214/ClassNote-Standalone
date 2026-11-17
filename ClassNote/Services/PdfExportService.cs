@@ -84,12 +84,27 @@ public sealed class PdfExportService : IPdfExportService
                         .Replace("\r\n", "\n").Replace('\r', '\n')
                         .Split('\n');
 
-                    foreach (var line in lines)
+                    for (int i = 0; i < lines.Length; i++)
                     {
-                        var trimmed = line.TrimEnd();
+                        var trimmed = lines[i].TrimEnd();
                         if (string.IsNullOrWhiteSpace(trimmed))
                         {
                             col.Item().Height(6);
+                            continue;
+                        }
+
+                        // 表格：连续的 `|...|` 行整体处理。
+                        // 旧实现把每一行当普通段落印，表格退化成一条条带竖线的句子，列关系全丢。
+                        if (IsTableRow(trimmed))
+                        {
+                            var tableRows = new List<string>();
+                            while (i < lines.Length && IsTableRow(lines[i].TrimEnd()))
+                            {
+                                tableRows.Add(lines[i].TrimEnd());
+                                i++;
+                            }
+                            i--;   // 外层循环会再加一
+                            WriteTable(col, tableRows);
                             continue;
                         }
 
@@ -100,12 +115,11 @@ public sealed class PdfExportService : IPdfExportService
                             WriteRichLine(col.Item(), trimmed[3..], 14, "#1565C0");
                         else if (trimmed.StartsWith("# "))
                             WriteRichLine(col.Item(), trimmed[2..], 16, "#0D47A1");
-                        // 无序列表
-                        else if (trimmed.StartsWith("- ") || trimmed.StartsWith("* "))
-                            WriteRichLine(col.Item().PaddingLeft(12), "•  " + trimmed[2..], 11, "#333333");
-                        // 有序列表（1. / 2) / 1、 三种写法；旧正则转义写错，从来没识别到过）
-                        else if (MarkdownInlineText.TryStripOrderedMarker(trimmed, out var ordered))
-                            WriteRichLine(col.Item().PaddingLeft(12), ordered, 11, "#333333");
+                        // 列表（含**嵌套**）：按前导空格决定缩进层级。
+                        // 旧实现把所有层级都排成同样的缩进，层级信息全部丢失。
+                        else if (TryParseListItem(trimmed, out int depth, out string itemText, out bool ordered))
+                            WriteRichLine(col.Item().PaddingLeft(12 + (depth * 14)),
+                                (ordered ? "" : "•  ") + itemText, 11, "#333333");
                         // 引用
                         else if (trimmed.StartsWith("> "))
                             WriteRichLine(col.Item().PaddingLeft(12), trimmed[2..], 11, "#666666", italic: true);
@@ -157,7 +171,111 @@ public sealed class PdfExportService : IPdfExportService
         });
     }
 
-    /// <summary>从系统字体目录注册一个中文字体，绑定到自定义名称 ClassNoteCJK。</summary>
+    /// <summary>
+    /// 把一组 Markdown 表格行排成可读文本。
+    ///
+    /// QuestPDF 能画真正的表格，但那需要把 Markdown 解析成块结构（见 <see cref="WriteTable"/> 的说明）；
+    /// 这里先做**内容不丢**的版本：每行按 <c>|</c> 切列，用固定分隔符连起来并加粗表头，
+    /// 分隔行（<c>|---|</c>）跳过。用户至少能看到列与列的对应关系，而不是一条条带竖线的句子。
+    /// </summary>
+    private static void WriteTable(QuestPDF.Fluent.ColumnDescriptor col, IReadOnlyList<string> rows)
+    {
+        bool headerWritten = false;
+        foreach (var row in rows)
+        {
+            if (IsTableSeparator(row)) continue;
+
+            var cells = SplitTableRow(row);
+            if (cells.Count == 0) continue;
+
+            string text = string.Join("  |  ", cells);
+            if (!headerWritten)
+            {
+                WriteRichLine(col.Item().PaddingTop(4), "**" + text + "**", 11, "#333333");
+                headerWritten = true;
+            }
+            else
+            {
+                WriteRichLine(col.Item().PaddingLeft(2), text, 11, "#333333");
+            }
+        }
+    }
+
+    /// <summary>该行是不是 Markdown 表格行（以竖线开头并结尾）。</summary>
+    internal static bool IsTableRow(string line)
+    {
+        string t = line.Trim();
+        return t.Length >= 2 && t.StartsWith('|') && t.EndsWith('|');
+    }
+
+    /// <summary>表格的分隔行：<c>|---|---|</c>（只含竖线、横线与空格）。</summary>
+    internal static bool IsTableSeparator(string line)
+    {
+        string t = line.Trim();
+        if (!IsTableRow(t)) return false;
+        foreach (char c in t)
+        {
+            if (c is not ('|' or '-' or ':' or ' ')) return false;
+        }
+        return t.Contains('-');
+    }
+
+    /// <summary>按 <c>|</c> 切出单元格（去掉首尾空串与两端空白）。</summary>
+    internal static List<string> SplitTableRow(string line)
+    {
+        var cells = new List<string>();
+        var t = line.Trim();
+        if (t.StartsWith('|')) t = t[1..];
+        if (t.EndsWith('|')) t = t[..^1];
+
+        foreach (var cell in t.Split('|'))
+        {
+            string c = cell.Trim();
+            if (c.Length > 0) cells.Add(c);
+        }
+        return cells;
+    }
+
+    /// <summary>
+    /// 解析列表项：返回缩进层级（0 起）、正文，以及是否为有序列表。
+    ///
+    /// 判据：前导空格数 ÷ 2 作为层级（Markdown 的常见约定），
+    /// 标记为 <c>-</c>/<c>*</c>/<c>+</c> 或 <c>1.</c>/<c>1)</c>/<c>1、</c>。
+    /// 解析不出返回 false，由调用方按普通段落处理（**绝不吞掉内容**）。
+    /// </summary>
+    internal static bool TryParseListItem(string line, out int depth, out string text, out bool ordered)
+    {
+        depth = 0;
+        text = "";
+        ordered = false;
+
+        int indent = 0;
+        while (indent < line.Length && line[indent] == ' ') indent++;
+
+        string body = line[indent..];
+        if (body.Length == 0) return false;
+
+        depth = indent / 2;
+
+        if (body.Length >= 2 && (body[0] == '-' || body[0] == '*' || body[0] == '+') && body[1] == ' ')
+        {
+            text = body[2..].TrimStart();
+            return text.Length > 0;
+        }
+
+        if (MarkdownInlineText.TryStripOrderedMarker(body, out string orderedText))
+        {
+            ordered = true;
+            text = orderedText;
+            return text.Length > 0;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 从系统字体目录注册一个中文字体，绑定到自定义名称 ClassNoteCJK。
+    /// </summary>
     private static void RegisterCjkFont()
     {
         var fontsDir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);

@@ -15,6 +15,12 @@ public interface IApiService
 
     /// <summary>删除一个会话及其全部关联数据（本地）。</summary>
     Task DeleteSessionAsync(Guid id);
+
+    /// <summary>收藏 / 取消收藏：收藏后这节的音频、转写、截图永久保留。</summary>
+    Task SetSessionFavoriteAsync(Guid id, bool favorite);
+
+    /// <summary>当前收藏状态。</summary>
+    Task<bool> IsSessionFavoriteAsync(Guid id);
     Task UploadScreenshotAsync(Guid sessionId, int seqNo, double timestamp, string type, byte[] imageData, string? url);
     Task<AudioUploadInitResult> InitAudioUploadAsync(Guid sessionId, int fileSize, string filename);
     Task UploadAudioPartAsync(string uploadId, int partNumber, byte[] data);

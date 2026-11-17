@@ -82,9 +82,20 @@ public partial class SettingsWindow : Window
         ClassroomTranscriptionCombo.SelectedIndex =
             (int)ClassroomTranscriptionModes.FromStorage(s.ClassroomTranscription);
 
+        // 原料留存天数（笔记始终保留，这里清理的是音频/截图/转写）
+        RetentionDaysBox.Text = s.ContentRetentionDays.ToString();
+
         // 触摸屏优化（一体机 / 触摸屏）：默认开。关掉后长按不再等同于右键，
         // 因此文案里必须说清楚代价（没有鼠标就再也调不出右键菜单）。
         TouchOptimizationsCheck.IsChecked = s.TouchOptimizations;
+
+        // 截图素材形态（v1.2）：图片直送 / OCR 文本 / 两者
+        ScreenshotInputCombo.ItemsSource = ScreenshotInputModes.DisplayNames;
+        ScreenshotInputCombo.SelectedIndex =
+            ScreenshotInputModes.IndexOf(ScreenshotInputModes.FromStorage(s.ScreenshotInput));
+        VisionMaxImagesBox.Text = s.VisionMaxImagesPerNote.ToString();
+        VisionMaxEdgeBox.Text = s.VisionMaxEdgePx.ToString();
+        ApplyVisionVisibility();
 
         // OCR 引擎（v1.1）：同样是"顺序与枚举一一对应"的下拉框
         OcrEngineCombo.ItemsSource = OcrEngines.DisplayNames;
@@ -298,6 +309,46 @@ public partial class SettingsWindow : Window
             (OcrRequestFormat)Math.Clamp(OcrFormatCombo.SelectedIndex, 0, OcrEngines.RequestFormatDisplayNames.Length - 1)));
 
     private void OcrEngineCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) => ApplyOcrVisibility();
+
+    // ── 截图素材形态（v1.2）────────────────────────────────────
+
+    /// <summary>当前选中的截图输入模式。</summary>
+    private ScreenshotInputMode SelectedScreenshotInput
+        => ScreenshotInputModes.FromIndex(ScreenshotInputCombo.SelectedIndex);
+
+    /// <summary>只有选了"带图片"的模式才显示张数/长边两个数字框（纯 OCR 模式用不上）。</summary>
+    private void ApplyVisionVisibility()
+    {
+        if (VisionOptionsPanel == null) return;   // 构造过程中控件尚未就绪
+        VisionOptionsPanel.Visibility = SelectedScreenshotInput.UsesVision()
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void ScreenshotInputCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        => ApplyVisionVisibility();
+
+    /// <summary>
+    /// 原料留存天数：0 = 不清理；非法输入回退默认 7 天。
+    /// 上限 3650 天（十年），避免手滑输入一个巨大数值后无法察觉"其实等于没清理"。
+    /// </summary>
+    private int ParsedRetentionDays()
+    {
+        if (int.TryParse(RetentionDaysBox.Text?.Trim(), out int days) && days >= 0 && days <= 3650)
+            return days;
+        return 7;
+    }
+
+    /// <summary>把两个数字框解析成安全值：非法输入回退默认，不因为手滑挡住整次保存。</summary>
+    private (int MaxImages, int MaxEdgePx) ParsedVisionOptions()
+    {
+        int maxImages = 30, maxEdge = 1600;
+        if (int.TryParse(VisionMaxImagesBox.Text?.Trim(), out int m) && m >= 1 && m <= 200)
+            maxImages = m;
+        if (int.TryParse(VisionMaxEdgeBox.Text?.Trim(), out int e) && e >= 0 && e <= 4096)
+            maxEdge = e;
+        return (maxImages, maxEdge);
+    }
 
     /// <summary>只有选了远程服务才显示地址/密钥/超时等配置；同时把界面上的取舍说清楚。</summary>
     private void ApplyOcrVisibility()
@@ -523,6 +574,10 @@ public partial class SettingsWindow : Window
             s.RecordingOutputDeviceName = outputName;
             s.ClassroomTranscription = ((ClassroomTranscriptionMode)Math.Max(0,
                 ClassroomTranscriptionCombo.SelectedIndex)).ToString();
+            s.ContentRetentionDays = ParsedRetentionDays();
+            s.ScreenshotInput = ScreenshotInputModes.ToStorage(SelectedScreenshotInput);
+            s.VisionMaxImagesPerNote = ParsedVisionOptions().MaxImages;
+            s.VisionMaxEdgePx = ParsedVisionOptions().MaxEdgePx;
             s.OcrEngine = OcrEngines.ToStorage(ocrEngine);
             s.OcrServiceUrl = OcrUrlBox.Text.Trim();
             s.OcrRequestFormat = OcrEngines.ToStorage(SelectedOcrFormat);

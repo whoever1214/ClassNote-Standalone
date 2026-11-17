@@ -43,11 +43,14 @@ public class MarkdownInlineTextTests
     }
 
     [Fact]
-    public void MathDelimiters_AreStripped_ContentKept()
+    public void MathDelimiters_AreStripped_AndFormulaBecomesUnicode()
     {
-        // QuestPDF 排不了 LaTeX：脱掉 $ 分隔符、保留公式原文，比印出美元符有用
+        // QuestPDF 排不了 LaTeX：脱掉 $ 分隔符，并把公式转成 Unicode 近似排版。
+        // 原样印出 `\min` 这类命令等于没排（v0.8 之前的做法），用户看到的是源码而不是公式。
         Assert.Equal("f(n) = min(f(n-1)+1)", Plain("$f(n) = min(f(n-1)+1)$"));
-        Assert.Equal("E=mc^2", Plain("$$E=mc^2$$"));
+        // 上标转 Unicode：`mc^2` → mc²
+        Assert.Equal("E=mc²", Plain("$$E=mc^2$$"));
+        // 普通下标写法不是公式，原样保留
         Assert.Equal("转移方程：d[i][j] = 1 + d[i-1][j-1]",
             Plain("转移方程：$d[i][j] = 1 + d[i-1][j-1]$"));
     }

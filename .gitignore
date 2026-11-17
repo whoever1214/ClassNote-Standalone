@@ -44,3 +44,10 @@ devtools/insert-reference-note.py
 
 # 本地 NuGet 配置（含镜像源，按需自建）
 # ClassNote/NuGet.config
+
+# 临时工作目录：放用户提供的素材（PDF 原件、反解出的文本）与一次性诊断脚本。
+# 里面的内容可能含真实课堂数据，禁止入库。
+_inbox/
+
+# 现场真实数据（含真实课堂音频/转写/截图，约 5 GB 的 7z 备份）：绝不入库
+resource/

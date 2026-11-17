@@ -42,7 +42,11 @@ public sealed record NoteSegment(
     string? TimestampHint);
 
 /// <summary>截图 OCR 的一个条目（连续且只有数字的行会并入前一条目，避免页码丢失所属内容）。</summary>
-public sealed record OcrBlock(string Prefix, string Content, int StartSeconds);
+/// <param name="Prefix">来源标记行，形如 <c>[new_slide @ 00:09:00]</c>。</param>
+/// <param name="Content">该条目的正文。</param>
+/// <param name="StartSeconds">截图时刻（秒）。</param>
+/// <param name="SeqNo">截图序号（0 = 未知）。按时间对齐时用于保持稳定顺序。</param>
+public sealed record OcrBlock(string Prefix, string Content, int StartSeconds, int SeqNo = 0);
 
 /// <summary>
 /// 笔记素材分段器：纯计算，不发网络请求。
@@ -88,13 +92,19 @@ public static class NoteSegmenter
     /// 段数上限（成本护栏），小于 1 时按 1 处理。超出上限的转写**不会被丢弃**，
     /// 而是全部并入最后一段，其量记录在 <see cref="NotePlan.OversizedChars"/>。
     /// </param>
+    /// <param name="timeline">
+    /// 转写 ↔ 录音时间的对照表（见 <see cref="TranscriptTimeline"/>）。提供时截图按**时间戳归属**到
+    /// 对应段落；为 null 或不可用时退回"按序号均摊"——那条路会把别的时间段的幻灯片塞进本段，
+    /// 使两源在同一段内无法互证（这正是 P0-β 要修的问题）。**失败即退化，绝不抛异常。**
+    /// </param>
     public static NotePlan Build(
         string course,
         string? transcript,
         string? ocrText,
         int maxCharsPerSegment = DefaultMaxCharsPerSegment,
         int overlapChars = DefaultOverlapChars,
-        int maxSegments = DefaultMaxSegments)
+        int maxSegments = DefaultMaxSegments,
+        TranscriptTimeline? timeline = null)
     {
         transcript ??= "";
         ocrText ??= "";
@@ -135,19 +145,7 @@ public static class NoteSegmenter
 
         // 3. OCR 条目按序号均摊到各窗口（与时间对齐解耦，避免"转写很短而 PPT 很多"
         //    时按时间切分把大量 OCR 重复塞进每一段）
-        var buckets = new List<OcrBlock>[segCount];
-        for (int i = 0; i < segCount; i++) buckets[i] = new List<OcrBlock>();
-        if (blocks.Count > 0)
-        {
-            var order = new List<OcrBlock>(blocks);
-            order.Sort((a, b) => a.StartSeconds.CompareTo(b.StartSeconds));
-            for (int i = 0; i < order.Count; i++)
-            {
-                int seg = (int)((long)i * segCount / order.Count);
-                if (seg >= segCount) seg = segCount - 1;
-                buckets[seg].Add(order[i]);
-            }
-        }
+        var buckets = AssignOcr(blocks, windows, segCount, timeline, maxCharsPerSegment);
 
         // 4. 组装窗口
         //    多来源素材（分轨录音，转写里带【麦克风…】/【系统声音…】标注）需要特殊处理：
@@ -183,6 +181,117 @@ public static class NoteSegmenter
     /// <summary>按 [start, end) 切一段转写；越界时返回空串。</summary>
     private static string SliceTranscript(string transcript, (int Start, int End) window)
         => window.Start >= transcript.Length ? "" : transcript.Substring(window.Start, window.End - window.Start);
+
+    /// <summary>
+    /// 把截图条目分配到各段。
+    ///
+    /// 两条路：
+    /// · **按时间戳归属**（<paramref name="timeline"/> 可用时）：先算出每段覆盖的录音时间区间
+    ///   （用该段转写字符区间反查），再把每张截图放进时间上包含它的那一段。这样同一段里的
+    ///   转写与课件讲的是同一时刻的事，两源才能互证——这正是 P1 交叉核验的前提。
+    /// · **按序号均摊**（旧行为，时间轴不可用时的兜底）：按时间排序后等分。
+    ///
+    /// 无论走哪条路，都会做一次**容量回填**：截图在时间上常常成簇（老师连续翻页），
+    /// 而转写在时间上均匀，直接按时间分配会把某一页压到超过单段上限。因此把越界的条目
+    /// 按剩余容量分配到还有空间的段里——宁可换一段，也不要撑破那一段的输入上限。
+    /// </summary>
+    /// <param name="blocks">已折叠重复的截图条目。</param>
+    /// <param name="windows">各段的转写字符窗口（顺序即时间顺序）。</param>
+    /// <param name="segCount">段数。</param>
+    /// <param name="timeline">时间对照表（可为 null）。</param>
+    internal static List<OcrBlock>[] AssignOcr(
+        IReadOnlyList<OcrBlock> blocks, IReadOnlyList<(int Start, int End)> windows, int segCount,
+        TranscriptTimeline? timeline,
+        int maxCharsPerSegment = DefaultMaxCharsPerSegment)
+    {
+        var buckets = new List<OcrBlock>[segCount];
+        for (int i = 0; i < segCount; i++) buckets[i] = new List<OcrBlock>();
+        if (blocks.Count == 0 || segCount == 0) return buckets;
+
+        // 稳定顺序：先按时间，其次按序号（同一秒内的多张截图保持原有先后）
+        var order = new List<OcrBlock>(blocks);
+        order.Sort((a, b) => a.StartSeconds != b.StartSeconds
+            ? a.StartSeconds.CompareTo(b.StartSeconds)
+            : a.SeqNo.CompareTo(b.SeqNo));
+
+        if (segCount == 1 || timeline == null || !timeline.IsUsable)
+        {
+            for (int i = 0; i < order.Count; i++)
+            {
+                int seg = (int)((long)i * segCount / order.Count);
+                if (seg >= segCount) seg = segCount - 1;
+                buckets[seg].Add(order[i]);
+            }
+            return buckets;
+        }
+
+        // 各段的时间区间（取不到的段跳过，其截图由后面的容量兜底分配）
+        var ranges = new (int Start, int End)?[segCount];
+        for (int i = 0; i < segCount; i++)
+            ranges[i] = timeline.TimeRangeFor(windows[i].Start, windows[i].End);
+
+        // 单张截图允许占用的上限：单段上限的六成，给"这一页文字特别多"和别的截图留出余地。
+        // 用单段上限而不是"平均值"是刻意的：平均值会被段数摊薄，段数一多就没人愿意收留大截图。
+        int overflow = Math.Max(1, maxCharsPerSegment * 6 / 10);
+
+        var pending = new List<OcrBlock>();
+        foreach (var block in order)
+        {
+            int target = SegmentForTime(ranges, block.StartSeconds);
+            if (target < 0)
+            {
+                pending.Add(block);   // 落在所有段之外：交给容量分配
+                continue;
+            }
+            if (UsedChars(buckets[target]) + block.Content.Length > overflow)
+            {
+                pending.Add(block);   // 这一段装不下了：换一段，别撑破它的输入上限
+                continue;
+            }
+            buckets[target].Add(block);
+        }
+
+        // 容量回填：按"剩余容量最多"的段依次放，保证既不丢内容也不撑破任何一段
+        foreach (var block in pending)
+        {
+            int best = 0;
+            for (int i = 1; i < segCount; i++)
+            {
+                if (UsedChars(buckets[i]) < UsedChars(buckets[best]))
+                    best = i;
+            }
+            buckets[best].Add(block);
+        }
+
+        return buckets;
+    }
+
+    /// <summary>某个时刻落在哪一段的时间区间内；都不在时返回 -1。</summary>
+    private static int SegmentForTime(IReadOnlyList<(int Start, int End)?> ranges, int seconds)
+    {
+        for (int i = 0; i < ranges.Count; i++)
+        {
+            var range = ranges[i];
+            if (range == null) continue;
+            if (seconds >= range.Value.Start && seconds < range.Value.End)
+                return i;
+        }
+
+        // 末段之后（录音结束后又截了一张图）归到最后一节有时间区间的段
+        for (int i = ranges.Count - 1; i >= 0; i--)
+        {
+            if (ranges[i] != null && seconds >= ranges[i]!.Value.End) return i;
+        }
+        return -1;
+    }
+
+    private static int UsedChars(List<OcrBlock> bucket)
+    {
+        int sum = 0;
+        foreach (var block in bucket)
+            sum += block.Content.Length;
+        return sum;
+    }
 
     /// <summary>
     /// 把带来源标注的转写拆成 (标注行, 正文) 列表。

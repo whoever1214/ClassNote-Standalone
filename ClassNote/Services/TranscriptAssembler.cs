@@ -111,7 +111,7 @@ public sealed class TranscriptAssembler
             progress?.Report(missing.Count == expected
                 ? "正在转写语音…"
                 : $"正在补算剩余 {missing.Count} 段（约 {missingSeconds / 60:0.#} 分钟音频）…");
-            await Task.Run(() => FillMissing(sessionId, wavPath, info, fileTotal, source, missing, texts));
+            await Task.Run(() => FillMissing(sessionId, wavPath, info, fileTotal, source, missing, texts, progress));
         }
 
         return SenseVoiceSttService.JoinChunks(
@@ -120,9 +120,12 @@ public sealed class TranscriptAssembler
 
     /// <summary>按块补算缺失的转写（逐块 seek 读文件，内存占用与音频总长无关）。</summary>
     private void FillMissing(Guid sessionId, string wavPath, WavePcmInfo info, long total,
-        RecordingAudioSource source, List<int> missing, Dictionary<int, string> texts)
+        RecordingAudioSource source, List<int> missing, Dictionary<int, string> texts,
+        IProgress<string>? progress = null)
     {
         var transcribe = _transcribeChunk!;
+        string label = source == RecordingAudioSource.System ? "系统声音" : "麦克风";
+        int errors = 0;
         foreach (int index in missing)
         {
             try
@@ -148,8 +151,16 @@ public sealed class TranscriptAssembler
             }
             catch (Exception ex)
             {
+                errors++;
+                // 旧实现只写 Debug.WriteLine：模型缺失/推理异常时整条音轨静默变空，
+                // 用户最后只看到一篇"只有截图"的笔记，无从知道原因。这里必须上报。
                 Debug.WriteLine($"[TranscriptAssembler] 第 {index} 块补算失败: {ex.Message}");
+                if (errors == 1)
+                    progress?.Report($"{label}转写失败（第 {index} 块）：{ex.Message}");
             }
         }
+
+        if (errors > 0)
+            progress?.Report($"{label}共有 {errors}/{missing.Count} 块转写失败，这些片段不会进入笔记（多半是语音识别模型未加载）");
     }
 }

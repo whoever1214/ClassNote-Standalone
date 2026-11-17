@@ -12,9 +12,9 @@ namespace ClassNote.Services;
 /// · 字面的 <c>**加粗**</c> 星号；· 字面的 <c>$公式$</c> 美元符；· 字面的反引号；
 /// · 编号列表完全识别不到（识别用的正则 <c>^d+[.)]s+</c> 转义丢失，永远匹配不上，形同虚设）。
 ///
-/// 处理原则：**只去掉标记，绝不改动文字内容**——这与全局的"技术内容逐字保真"口径一致。
-/// 公式（<c>$...$</c> / <c>$$...$$</c>）在这里只脱掉分隔符：QuestPDF 无法排版 LaTeX，
-/// 保留 <c>d_{i,j}</c> 这样的原文反而比印出美元符更有用。
+/// 处理原则：**只去掉标记与转义，绝不改写文字内容**——这与全局的"技术内容逐字保真"口径一致。
+/// 唯一的例外是公式：<c>$...$</c> 会经 <see cref="LatexToUnicode"/> 转成 Unicode 近似排版，
+/// 因为 QuestPDF 排不了 LaTeX，而字面印出 <c>\min</c> 这类命令等于没排。
 /// </summary>
 public static class MarkdownInlineText
 {
@@ -49,7 +49,9 @@ public static class MarkdownInlineText
         {
             char c = line[i];
 
-            // $$ 行间公式与 $ 行内公式：脱掉分隔符，公式内容原样保留
+            // $$ 行间公式与 $ 行内公式：脱掉分隔符，并把公式转成 Unicode 近似排版。
+            // QuestPDF 排不了 LaTeX，原样印出 `\min(...)` 对用户毫无价值（v0.8 改动）；
+            // 转换不了的命令由 LatexToUnicode 原样保留，因此不会吞掉内容。
             if (c == '$')
             {
                 int fence = i + 1 < line.Length && line[i + 1] == '$' ? 2 : 1;
@@ -57,7 +59,7 @@ public static class MarkdownInlineText
                 if (close > i)
                 {
                     Flush();
-                    runs.Add(new Run(line[(i + fence)..close], bold, false));
+                    runs.Add(new Run(LatexToUnicode.Convert(line[(i + fence)..close]), bold, false));
                     i = close + fence;
                     continue;
                 }

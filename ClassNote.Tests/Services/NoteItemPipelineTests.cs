@@ -122,16 +122,121 @@ public class NoteItemPipelineTests
     }
 
     [Fact]
-    public void Deduplicate_SameBodyDifferentKind_KeepsBoth()
+    public void Deduplicate_SameBodyDifferentKind_MergesAndKeepsTheMoreSpecificKind()
     {
-        // 同一条内容既可能是知识点也可能是易错点，两种归类都要保留
+        // v0.8 起键只含正文：模型在**每段独立**分类，同一句话常被一段归为知识点、
+        // 另一段归为易错点；两条都留就会在最终笔记里出现两遍（化学课实测重复行占比 25.4%）。
+        // 合并时保留"更具体"的归类——易错点优先，反过来会丢掉一条易错提示。
         var items = new List<NotePromptBuilder.NoteItem>
         {
             Item("洛必达条件", "必须是未定式", "knowledge"),
             Item("洛必达条件", "必须是未定式", "pitfall"),
         };
 
-        Assert.Equal(2, NotePromptBuilder.Deduplicate(items).Items.Count);
+        var result = NotePromptBuilder.Deduplicate(items);
+
+        Assert.Single(result.Items);
+        Assert.Equal(1, result.MergedCount);
+        Assert.True(result.Items[0].IsPitfall);
+    }
+
+    [Fact]
+    public void Deduplicate_SameBodyDifferentTitle_MergesBecauseBodyIsTheFingerprint()
+    {
+        // 标题是模型自己起的，同一内容在不同段被起不同标题时不能因此漏合并
+        var items = new List<NotePromptBuilder.NoteItem>
+        {
+            Item("碳酸钠的俗名", "纯碱或苏打", "knowledge"),
+            Item("俗名", "纯碱或苏打", "knowledge"),
+        };
+
+        var result = NotePromptBuilder.Deduplicate(items);
+
+        Assert.Single(result.Items);
+        Assert.Equal("碳酸钠的俗名", result.Items[0].Title);   // 保留先出现的那条
+    }
+
+    [Fact]
+    public void ParseSegmentItems_ReadsEvidenceField()
+    {
+        const string raw = """
+        {"items":[
+          {"title":"钠的保存","body":"钠保存在煤油中","kind":"knowledge","source":"现场","evidence":"双证"},
+          {"title":"某真题","body":"（2025·山东卷）下列说法正确的是","kind":"exam","source":"课件","evidence":"课件"}
+        ]}
+        """;
+
+        var items = NotePromptBuilder.ParseSegmentItems(raw, 1);
+
+        Assert.Equal("双证", items[0].Evidence);
+        Assert.Equal("exam", items[1].Kind);
+        Assert.True(items[1].IsExam);
+        Assert.False(items[0].IsExam);
+    }
+
+    [Fact]
+    public void ParseSegmentItems_MissingEvidence_BecomesEmptyNotFailure()
+    {
+        // 本地小模型可能不认新字段：缺 evidence 不能让整条被丢掉
+        const string raw = """{"items":[{"title":"A","body":"正文 A","kind":"knowledge"}]}""";
+
+        var items = NotePromptBuilder.ParseSegmentItems(raw, 1);
+
+        Assert.Single(items);
+        Assert.Equal("", items[0].Evidence);
+    }
+
+    [Fact]
+    public void AssembleFromItems_PutsExamItemsIntoTheirOwnSection()
+    {
+        // 这是"错误断言被当成事实"的根治办法：判断题的选项原句必须落在「习题（原题）」一节，
+        // 并带一句"这些是题目，不是结论"的说明。
+        var items = new List<NotePromptBuilder.NoteItem>
+        {
+            Item("钠的保存", "钠保存在煤油中", "knowledge"),
+            Item("某真题", "金属钠着火时，可用泡沫灭火器或干砂灭火", "exam"),
+        };
+
+        string note = NotePromptBuilder.AssembleFromItems("化学", items);
+
+        Assert.Contains("## 习题（原题）", note);
+        Assert.Contains("不是老师的结论", note);
+        // 原题必须落在「习题」一节里，而不是被当成核心知识点
+        int examSection = note.IndexOf("## 习题（原题）", StringComparison.Ordinal);
+        int examBody = note.IndexOf("可用泡沫灭火器", StringComparison.Ordinal);
+        Assert.True(examBody > examSection, "原题正文必须出现在习题一节之后");
+    }
+
+    [Fact]
+    public void AssembleFromItems_NoExamItems_OmitsExamSection()
+    {
+        var items = new List<NotePromptBuilder.NoteItem> { Item("A", "正文 A", "knowledge") };
+
+        string note = NotePromptBuilder.AssembleFromItems("课程", items);
+
+        Assert.DoesNotContain("## 习题（原题）", note);
+    }
+
+    [Fact]
+    public void Deduplicate_CollapsesTheDuplicationThatWasMeasuredInRealNotes()
+    {
+        // 这组数据来自化学课实测笔记的形态：同一句话在「核心知识点」与「重点及易错点」各出现一次，
+        // 标题由模型各起各的。旧键（kind + 标题 + 正文）会把它们全部判为"不同条目"，
+        // 于是整篇笔记 25.4% 的行是重复的。新键（只按正文）把它们收敛掉。
+        var items = new List<NotePromptBuilder.NoteItem>
+        {
+            Item("金属钠的保存", "金属钠可以放置在煤油或石蜡油中保存", "knowledge", segment: 1),
+            Item("钠的存放", "金属钠可以放置在煤油或石蜡油中保存", "knowledge", segment: 2),
+            Item("易错：钠的保存", "金属钠可以放置在煤油或石蜡油中保存", "pitfall", segment: 3),
+            Item("高压钠灯", "高压钠灯发出的黄光透雾能力强、射程较远", "knowledge", segment: 1),
+            Item("高压钠灯的特点", "高压钠灯发出的黄光透雾能力强、射程较远", "pitfall", segment: 2),
+        };
+
+        var result = NotePromptBuilder.Deduplicate(items);
+
+        Assert.Equal(2, result.Items.Count);          // 两个知识点各剩一条
+        Assert.Equal(3, result.MergedCount);
+        Assert.Contains(result.Items, i => i.IsPitfall);   // "更具体"的归类被保留
     }
 
     [Fact]

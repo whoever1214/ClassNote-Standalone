@@ -15,7 +15,18 @@ namespace ClassNote.Services;
 public interface ILlmService
 {
     /// <summary>生成课堂笔记（Markdown）。素材过长时自动分段整理后合并。</summary>
-    Task<NoteGenerationResult> GenerateNoteAsync(string course, string transcript, string ocrText, IProgress<string>? progress = null);
+    /// <param name="timeline">
+    /// 转写 ↔ 录音时间的对照表。提供时课件截图按**时间戳**归入对应段落，使同一段里
+    /// 转写与截图讲的是同一时刻的内容（两源因此可互证）；为 null 时退回"按序号均摊"。
+    /// 用**可选参数**而不是改签名，是为了让既有调用方与测试替身无需改动。
+    /// </param>
+    /// <param name="images">
+    /// 直接送进多模态模型的截图（见 <see cref="NoteImage"/>）。为空时走纯文本路径（OCR 模式）。
+    /// 提供图片时使用「视觉模型」配置（<see cref="AppSettingsData.LlmVisionModel"/>，留空则沿用主模型）。
+    /// </param>
+    Task<NoteGenerationResult> GenerateNoteAsync(string course, string transcript, string ocrText,
+        IProgress<string>? progress = null, TranscriptTimeline? timeline = null,
+        IReadOnlyList<NoteImage>? images = null);
 
     /// <summary>检查 OpenAI 兼容 API（v1 接口）健康状态（GET /v1/models）。</summary>
     Task<LlmHealthResult> CheckHealthAsync(string? apiKey = null, string? baseUrl = null);
@@ -44,7 +55,12 @@ public sealed record LlmModelsResult(IReadOnlyList<string> Models, string Messag
 /// 因段数上限而被并入最后一段、未再切分的转写字符数（0 = 最后一段也没超单段上限）。
 /// 这些内容**没有被丢弃**，但最后一段的输入量超限，可能被模型截断——需要如实告知用户。
 /// </param>
-public sealed record NoteGenerationResult(string Markdown, int SegmentCount, int FailedSegments, int OversizedChars);
+/// <param name="QualityNote">
+/// 质量守卫的发现（例如"3 条原标注为现场的内容在转写里找不到佐证，已按课件处理"）。
+/// 没有发现时为 null。由 <see cref="NoteProcessor"/> 拼进用户可见的摘要。
+/// </param>
+public sealed record NoteGenerationResult(string Markdown, int SegmentCount, int FailedSegments,
+    int OversizedChars, string? QualityNote = null);
 
 public sealed class LlmService : ILlmService
 {
@@ -103,9 +119,13 @@ public sealed class LlmService : ILlmService
     /// 避免早期 Truncate() 静默丢弃后半节课的内容。
     /// </summary>
     public async Task<NoteGenerationResult> GenerateNoteAsync(
-        string course, string transcript, string ocrText, IProgress<string>? progress = null)
+        string course, string transcript, string ocrText, IProgress<string>? progress = null,
+        TranscriptTimeline? timeline = null, IReadOnlyList<NoteImage>? images = null)
     {
-        var plan = NoteSegmenter.Build(course, transcript, ocrText);
+        var plan = NoteSegmenter.Build(course, transcript, ocrText, timeline: timeline);
+        // 图片与分段一一对应：单段时全给，多段时按时间顺序连续切分（每张图恰好进一段）。
+        // 绝不能每段都塞全部图片——那等于把整节课的截图重复送 N 次，费用与上下文都会爆。
+        var imagesPerSegment = SplitImages(plan, images);
         // 分轨录制（麦克风 + 系统声音）的转写带有来源分区标注：提示词据此加入"分辨谁在说话"的要求，
         // 合并阶段也要据此事先声明"不许把来源标记洗掉"。
         bool multiSource = TranscriptSections.IsMultiSource(transcript);
@@ -115,9 +135,14 @@ public sealed class LlmService : ILlmService
             // 常见情形：素材在上限内，一次调用出完整笔记
             progress?.Report("正在生成笔记…");
             var single = plan.Segments[0];
+            var singleImages = imagesPerSegment[0];
+            if (singleImages.Count > 0)
+                progress?.Report($"正在生成笔记（含 {singleImages.Count} 张截图）…");
             var markdown = await ChatWithFallbackAsync(
                 NotePromptBuilder.NoteSystemPrompt,
-                NotePromptBuilder.BuildSingleNotePrompt(course, single.Transcript, single.OcrText, multiSource));
+                NotePromptBuilder.BuildSingleNotePrompt(course, single.Transcript, single.OcrText,
+                    multiSource, singleImages.Count),
+                images: singleImages);
             return new NoteGenerationResult(markdown, 1, 0, plan.OversizedChars);
         }
 
@@ -133,15 +158,24 @@ public sealed class LlmService : ILlmService
         // 明确告知规模：段数 × 最多 2 次调用对本地慢模型可能是几十分钟，用户有权提前知道
         progress?.Report($"素材较长，将分 {total} 段整理（最多 {total * 2} 次模型调用）…");
 
+        // 该段对应的图片（下标越界/未分段时返回空）
+        IReadOnlyList<NoteImage> ImagesOf(NoteSegment segment)
+            => segment.Index - 1 >= 0 && segment.Index - 1 < imagesPerSegment.Count
+                ? imagesPerSegment[segment.Index - 1]
+                : Array.Empty<NoteImage>();
+
         // 单段尝试：把异常收成返回值，好让调用方按错误性质决定"重试 / 记为该段失败 / 整体失败"
         async Task<(string? Raw, Exception? Error)> TrySegmentAsync(NoteSegment segment, bool isRetry)
         {
             try
             {
+                // 重试时不再重复附图片：请求体太大往往正是失败原因，第二次先把文字整理出来
+                var segmentImages = isRetry ? Array.Empty<NoteImage>() : ImagesOf(segment);
                 var text = await ChatWithFallbackAsync(
                     NotePromptBuilder.SegmentItemsSystemPrompt,
-                    NotePromptBuilder.BuildSegmentPrompt(course, segment, isRetry, multiSource, itemsSchema: true),
-                    jsonMode: true);
+                    NotePromptBuilder.BuildSegmentPrompt(course, segment, isRetry, multiSource,
+                        itemsSchema: true, imageCount: segmentImages.Count),
+                    jsonMode: true, images: segmentImages);
                 return (text, null);
             }
             catch (Exception ex)
@@ -210,7 +244,8 @@ public sealed class LlmService : ILlmService
         // 结构化路径：条目化可用时走"确定性去重 → 排序润色 → 回校"
         if (usedItemsSchema > 0)
         {
-            var result = await ComposeFromItemsAsync(course, allItems, progress, failures, total, plan.OversizedChars);
+            var result = await ComposeFromItemsAsync(course, allItems, progress, failures, total,
+                plan.OversizedChars, transcript);
             return result;
         }
 
@@ -256,12 +291,19 @@ public sealed class LlmService : ILlmService
     /// </summary>
     private async Task<NoteGenerationResult> ComposeFromItemsAsync(
         string course, IReadOnlyList<NotePromptBuilder.NoteItem> rawItems,
-        IProgress<string>? progress, int failures, int total, int oversizedChars)
+        IProgress<string>? progress, int failures, int total, int oversizedChars,
+        string transcript)
     {
         var dedup = NotePromptBuilder.Deduplicate(rawItems);
-        var items = dedup.Items;
         if (dedup.MergedCount > 0)
-            progress?.Report($"已按标题去重：合并 {dedup.MergedCount} 条完全重复内容，剩余 {items.Count} 条");
+            progress?.Report($"已按正文去重：合并 {dedup.MergedCount} 条完全重复内容，剩余 {dedup.Items.Count} 条");
+
+        // 质量守卫：核对"声称来自现场"的条目在转写里到底有没有佐证。
+        // 必须在拼装**之前**做——降级要反映到最终笔记的呈现口径上。
+        var guard = NoteQualityGuard.Inspect(dedup.Items, transcript);
+        var items = guard.Items;
+        if (guard.Downgraded > 0)
+            progress?.Report($"{guard.Downgraded} 条内容在课堂转写里找不到佐证，已按「课件」处理");
 
         string markdown;
         if (items.Count == 0)
@@ -321,7 +363,10 @@ public sealed class LlmService : ILlmService
         if (oversizedChars > 0)
             markdown = markdown.TrimEnd() + "\n\n" + NotePromptBuilder.OversizedNotice(oversizedChars);
 
-        return new NoteGenerationResult(markdown, total, failures, oversizedChars);
+        // 守卫的发现写进结果：由 NoteProcessor 拼进用户可见的摘要，
+        // 「有多少条被纠正了来源」是用户有权知道的事，不能只留在日志里。
+        return new NoteGenerationResult(markdown, total, failures, oversizedChars,
+            NoteQualityGuard.DescribeFindings(guard));
     }
 
     /// <summary>失败段的占位 JSON：合法但为空，表示"这一段没有可用内容"。</summary>
@@ -542,15 +587,25 @@ public sealed class LlmService : ILlmService
         return (s.LlmApiKey, s.LlmBaseUrl, s.LlmModel);
     }
 
-    /// <summary>生成笔记：主配置一次调用（内部已按 429/5xx/网络异常指数退避重试）。</summary>
-    private async Task<string> ChatWithFallbackAsync(string system, string user, bool jsonMode = false)
+    /// <summary>视觉模型配置：填了 LlmVisionModel 就用它，否则沿用主模型（不少自建服务是同一个多模态模型）。</summary>
+    private (string Key, string BaseUrl, string Model) GetVisionConfig()
     {
-        var (key, baseUrl, model) = GetPrimaryConfig();
-        return await ChatAsync(key, baseUrl, model, system, user, jsonMode);
+        var s = AppSettings.Instance.Snapshot();
+        var model = string.IsNullOrWhiteSpace(s.LlmVisionModel) ? s.LlmModel : s.LlmVisionModel;
+        return (s.LlmApiKey, s.LlmBaseUrl, model);
+    }
+
+    /// <summary>生成笔记：一次调用（内部已按 429/5xx/网络异常指数退避重试）。带图片时走视觉模型配置。</summary>
+    private async Task<string> ChatWithFallbackAsync(string system, string user, bool jsonMode = false,
+        IReadOnlyList<NoteImage>? images = null)
+    {
+        bool vision = images is { Count: > 0 };
+        var (key, baseUrl, model) = vision ? GetVisionConfig() : GetPrimaryConfig();
+        return await ChatAsync(key, baseUrl, model, system, user, jsonMode, images);
     }
 
     private async Task<string> ChatAsync(string apiKey, string baseUrl, string model,
-        string system, string user, bool jsonMode = false)
+        string system, string user, bool jsonMode = false, IReadOnlyList<NoteImage>? images = null)
     {
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new LlmCallException("尚未配置 LLM API Key，请在「设置」中配置。",
@@ -571,11 +626,7 @@ public sealed class LlmService : ILlmService
         var payload = new ChatRequest
         {
             Model = model,
-            Messages = new List<ChatMessage>
-            {
-                new() { Role = "system", Content = system },
-                new() { Role = "user", Content = user },
-            },
+            Messages = BuildMessages(system, user, images),
             Temperature = 0.3,
             // 分段整理用 JSON 输出：模型少写解释文字，直接省掉一轮"清洗输出"的开销。
             // 本地推理服务可能不认 response_format，故 jsonMode 为 false 时整个字段不发送
@@ -689,6 +740,61 @@ public sealed class LlmService : ILlmService
         return first.Length > 120 ? first[..120] : first;
     }
 
+    /// <summary>
+    /// 组装 messages：没有图片时 content 就是字符串（与旧行为逐字节一致，纯文本服务不受影响）；
+    /// 有图片时 content 变成 OpenAI 兼容的 content 数组，每张图前带一行"【图片 N】类型 @ 时间"，
+    /// 让模型知道这是第几张、对应录音的哪一刻。
+    /// </summary>
+    private static List<ChatMessage> BuildMessages(string system, string user, IReadOnlyList<NoteImage>? images)
+    {
+        var messages = new List<ChatMessage>
+        {
+            new() { Role = "system", Content = system },
+        };
+
+        if (images == null || images.Count == 0)
+        {
+            messages.Add(new ChatMessage { Role = "user", Content = user });
+            return messages;
+        }
+
+        var parts = new List<object> { new TextPart { Text = user } };
+        for (int i = 0; i < images.Count; i++)
+        {
+            var image = images[i];
+            parts.Add(new TextPart { Text = image.Caption(i + 1) });
+            parts.Add(new ImagePart
+            {
+                ImageUrl = new ImageUrl { Url = "data:image/jpeg;base64," + Convert.ToBase64String(image.Jpeg) },
+            });
+        }
+
+        messages.Add(new ChatMessage { Role = "user", Content = parts });
+        return messages;
+    }
+
+    /// <summary>
+    /// 把整节课的图片按分段**连续切分**（不是每段都给全部）：单段时全是它，
+    /// 多段时第 i 段拿第 i 块，保证每张图恰好出现一次、且顺序与时间一致。
+    /// </summary>
+    internal static IReadOnlyList<IReadOnlyList<NoteImage>> SplitImages(
+        NotePlan plan, IReadOnlyList<NoteImage>? images)
+    {
+        if (images == null || images.Count == 0 || plan.Segments.Count == 0)
+            return Enumerable.Repeat<IReadOnlyList<NoteImage>>(Array.Empty<NoteImage>(), Math.Max(1, plan.Segments.Count)).ToList();
+
+        int total = plan.Segments.Count;
+        var result = new List<IReadOnlyList<NoteImage>>(total);
+        for (int i = 0; i < total; i++)
+        {
+            int start = (int)((long)i * images.Count / total);
+            int end = (int)((long)(i + 1) * images.Count / total);
+            if (end <= start && start < images.Count) end = start + 1;  // 图片比段数少时也要分到
+            result.Add(images.Skip(start).Take(end - start).ToList());
+        }
+        return result;
+    }
+
     /// <summary>POST /v1/chat/completions 的请求体。</summary>
     private sealed class ChatRequest
     {
@@ -715,8 +821,30 @@ public sealed class LlmService : ILlmService
         [JsonProperty("role")]
         public string Role { get; set; } = "";
 
+        /// <summary>纯文本时是 string；带图片时是 content 数组（OpenAI 兼容多模态格式）。</summary>
         [JsonProperty("content")]
-        public string Content { get; set; } = "";
+        public object? Content { get; set; }
+    }
+
+    /// <summary>多模态 content 数组里的文本块。</summary>
+    private sealed class TextPart
+    {
+        [JsonProperty("type")] public string Type => "text";
+
+        [JsonProperty("text")] public string Text { get; set; } = "";
+    }
+
+    /// <summary>多模态 content 数组里的图片块（base64 data URL）。</summary>
+    private sealed class ImagePart
+    {
+        [JsonProperty("type")] public string Type => "image_url";
+
+        [JsonProperty("image_url")] public ImageUrl ImageUrl { get; set; } = new();
+    }
+
+    private sealed class ImageUrl
+    {
+        [JsonProperty("url")] public string Url { get; set; } = "";
     }
 
     private sealed class ResponseFormat

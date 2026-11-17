@@ -12,6 +12,27 @@ public class Session : INotifyPropertyChanged
     public int? Duration { get; set; }
     public string Status { get; set; } = "recording";
 
+    private bool _isFavorite;
+
+    /// <summary>
+    /// 是否收藏。收藏的会话其录音、转写、截图**永久保留**，不被过期清理回收
+    /// （见 LocalRepository.PurgeExpiredContent）。
+    /// </summary>
+    public bool IsFavorite
+    {
+        get => _isFavorite;
+        set
+        {
+            if (_isFavorite == value) return;
+            _isFavorite = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFavorite)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FavoriteMark)));
+        }
+    }
+
+    /// <summary>列表里的收藏角标（未收藏时为空串，配合 Visibility 绑定无需额外转换器）。</summary>
+    public string FavoriteMark => _isFavorite ? "★" : "";
+
     /// <summary>
     /// 开始时间的星期几（如「周一」）。仅用于界面展示，数据库不存该字段，
     /// 记录列表里与 yyyy-MM-dd HH:mm 拼在一起让用户一眼看出是哪天。

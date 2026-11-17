@@ -5,9 +5,9 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.2</Version>
-    <FileVersion>1.0.2.0</FileVersion>
-    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -19,6 +19,17 @@
       为此放开 internal 可见性，而不是把这个内部接缝提升为公开 API——公开出去就再也收不回来了。
     -->
     <InternalsVisibleTo Include="NoteBench" />
+    <!--
+      OcrNormalizeEval 是"OCR 规范化到底修掉了多少"的离线评测工具：它必须调用**生产代码里的
+      同一个规范化实现**（OcrTextNormalizer / OcrLexicon），否则评测结果证明不了任何事。
+    -->
+    <InternalsVisibleTo Include="OcrNormalizeEval" />
+    <!--
+      RecoverNotes 是"用归档 WAV 重新转写并重建笔记"的离线恢复工具：它要直接驱动生产管线
+      （NoteProcessor / TranscriptAssembler），并把进程级库实例指向**别人机器上的 classnote.db**，
+      因此需要 internal 可见性。
+    -->
+    <InternalsVisibleTo Include="RecoverNotes" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="app.ico" />
