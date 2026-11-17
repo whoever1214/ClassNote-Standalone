@@ -107,4 +107,60 @@ public class NoteProcessorAudioTests
 
         Assert.True(NoteProcessor.HasAudioSamples(path));
     }
+
+    // ── 素材溯源（P2 收尾）──────────────────────────────────────
+
+    private static NoteProcessor.OcrMaterialLine Shot(string text, string header = "[new_slide @ 00:01:00]")
+        => new(header, text);
+
+    [Fact]
+    public void BuildProvenance_ReportsScreenshotAndTrackCounts()
+    {
+        var material = new List<NoteProcessor.OcrMaterialLine>
+        {
+            Shot("碳酸钠俗称纯碱"),
+            Shot("碳酸氢钠俗称小苏打"),
+        };
+
+        string text = NoteProcessor.BuildProvenance("碳酸钠碳酸钠", trackCount: 2,
+            material, OcrLexicon.FromTranscript("碳酸钠碳酸钠"));
+
+        Assert.Contains("2 张截图", text);
+        Assert.Contains("2 路录音", text);
+    }
+
+    [Fact]
+    public void BuildProvenance_CountsScreenshotsWithUnfixableOcrNoise()
+    {
+        // 一张干净、一张有无法确定性修复的残片（氵）→ 必须报"1 张有疑点"
+        var material = new List<NoteProcessor.OcrMaterialLine>
+        {
+            Shot("碳酸钠俗称纯碱"),
+            Shot("碳酸钠 氵谷氵夜 显 碱 性"),
+        };
+
+        string text = NoteProcessor.BuildProvenance("碳酸钠碳酸钠", trackCount: 1,
+            material, OcrLexicon.FromTranscript("碳酸钠碳酸钠"));
+
+        Assert.Contains("其中 1 张截图的 OCR 有无法确定性修复的疑点", text);
+    }
+
+    [Fact]
+    public void BuildProvenance_SaysSoWhenThereIsNoRecording()
+    {
+        string text = NoteProcessor.BuildProvenance("", trackCount: 0,
+            new List<NoteProcessor.OcrMaterialLine> { Shot("只有课件") }, OcrLexicon.Empty);
+
+        Assert.Contains("无录音", text);
+        Assert.Contains("1 张截图", text);
+    }
+
+    [Fact]
+    public void BuildProvenance_IsEmptySafe()
+    {
+        // 没有任何素材时也不能抛异常（管线里的边界情形）
+        string text = NoteProcessor.BuildProvenance("", 0, Array.Empty<NoteProcessor.OcrMaterialLine>(), OcrLexicon.Empty);
+
+        Assert.Contains("0 张截图", text);
+    }
 }

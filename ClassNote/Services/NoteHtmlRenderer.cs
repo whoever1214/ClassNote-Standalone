@@ -38,9 +38,18 @@ public static class NoteHtmlRenderer
     /// · 这两个正是 Markdig 数学扩展吐出的形式，两边必须一致；
     /// · 刻意**不**把 <c>$</c>、<c>(</c>、<c>[</c> 配成分隔符——正文里的美元符号、普通括号
     ///   绝不该被当成公式（这正是历史事故的成因）。
+    ///
+    /// v0.8 追加 <c>mhchem</c> 扩展（化学课需要）：它提供 <c>\ce{...}</c>，
+    /// 化学式与离子方程式因此能被正确排版。该扩展**已包含在随包分发的
+    /// <c>mathjax-tex-svg.js</c> 里**（不是额外下载），这里只需声明加载。
     /// </summary>
     public const string MathJaxConfig = @"  MathJax = {
-    tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+    loader: { load: ['[tex]/mhchem'] },
+    tex: {
+      inlineMath: [['\\(', '\\)']],
+      displayMath: [['\\[', '\\]']],
+      packages: { '[+]': ['mhchem'] }
+    },
     svg: { fontCache: 'global' }
   };";
 

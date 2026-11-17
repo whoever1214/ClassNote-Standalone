@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <!-- 引用的 ClassNote 是 WPF 应用（net8.0-windows + UseWPF），工具必须同 TFM 才能引用 -->
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>RecoverNotes</AssemblyName>
+    <RootNamespace>RecoverNotes</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\ClassNote\ClassNote.csproj" />
+  </ItemGroup>
+
+</Project>

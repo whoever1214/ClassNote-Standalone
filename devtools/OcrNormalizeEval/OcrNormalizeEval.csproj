@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>OcrNormalizeEval</AssemblyName>
+    <RootNamespace>OcrNormalizeEval</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 与 NoteBench 同样的做法：直接驱动**生产代码里的规范化实现**，
+         避免"评测工具自己又实现一遍规则"这种假验证。 -->
+    <ProjectReference Include="..\..\ClassNote\ClassNote.csproj" />
+  </ItemGroup>
+</Project>

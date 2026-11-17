@@ -5,9 +5,9 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.2</Version>
-    <FileVersion>1.0.2.0</FileVersion>
-    <AssemblyVersion>1.0.2.0</AssemblyVersion>
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
@@ -19,12 +19,29 @@
       为此放开 internal 可见性，而不是把这个内部接缝提升为公开 API——公开出去就再也收不回来了。
     -->
     <InternalsVisibleTo Include="NoteBench" />
+    <!--
+      OcrNormalizeEval 是"OCR 规范化到底修掉了多少"的离线评测工具：它必须调用**生产代码里的
+      同一个规范化实现**（OcrTextNormalizer / OcrLexicon），否则评测结果证明不了任何事。
+    -->
+    <InternalsVisibleTo Include="OcrNormalizeEval" />
+    <!--
+      RecoverNotes 是"用归档 WAV 重新转写并重建笔记"的离线恢复工具：它要直接驱动生产管线
+      （NoteProcessor / TranscriptAssembler），并把进程级库实例指向**别人机器上的 classnote.db**，
+      因此需要 internal 可见性。
+    -->
+    <InternalsVisibleTo Include="RecoverNotes" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="app.ico" />
-    <None Include="models\sensevoice\model_quant.onnx" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="models\sensevoice\tokens.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="models\sensevoice\am.mvn" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      SenseVoice 模型是 230 MB 的二进制资产，**不入库**（见 .gitignore）。
+      因此这里必须带 Condition：CI 与新克隆没有模型时，构建要通过，
+      缺失由运行时 SenseVoiceSttService.IsModelReady 判定，并把原因写进笔记摘要——
+      而不是让 build 直接因为"复制不到文件"（MSB3030）整条流水线挂掉。
+    -->
+    <None Include="models\sensevoice\model_quant.onnx" Condition="Exists('models\sensevoice\model_quant.onnx')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="models\sensevoice\tokens.json" Condition="Exists('models\sensevoice\tokens.json')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="models\sensevoice\am.mvn" Condition="Exists('models\sensevoice\am.mvn')" CopyToOutputDirectory="PreserveNewest" />
     <None Include="assets\mathjax-tex-svg.js" CopyToOutputDirectory="PreserveNewest" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.119" />

@@ -50,19 +50,46 @@
                     </StackPanel>
                 </Button>
 
-                <TextBlock Grid.Column="1" Text="{Binding Note.Title}"
-                           FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
-                           Margin="16,0,16,0" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="1" Margin="16,0,16,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Note.Title}"
+                               FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="11"
+                               Foreground="{StaticResource TextHintBrush}"
+                               Visibility="{Binding HasStatus, Converter={StaticResource BoolToVis}}"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
 
-                <Button Grid.Column="2" x:Name="ExportPdfButton" Style="{StaticResource PrimaryButtonStyle}"
-                        Height="34" VerticalAlignment="Center" Click="ExportPdfButton_Click"
-                        ToolTip="导出为 PDF 保存到桌面">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#xE792;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                   Margin="0,0,6,0" VerticalAlignment="Center" />
-                        <TextBlock Text="导出 PDF" FontSize="12" />
-                    </StackPanel>
-                </Button>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="FavoriteButton" Style="{StaticResource GhostButtonStyle}"
+                            Height="34" Click="FavoriteButton_Click"
+                            ToolTip="收藏后，这节的录音、转写与截图不再被自动清理">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="FavoriteIcon" Text="&#xE734;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding FavoriteButtonText}" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="RegenerateButton" Style="{StaticResource GhostButtonStyle}"
+                            Height="34" Margin="10,0,0,0" Click="RegenerateButton_Click"
+                            ToolTip="用已保存的转写与截图重新生成笔记（不会重新转写，也不重新录音）">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Text="重新生成" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Grid.Column="2" x:Name="ExportPdfButton" Style="{StaticResource PrimaryButtonStyle}"
+                            Height="34" Margin="10,0,0,0" VerticalAlignment="Center" Click="ExportPdfButton_Click"
+                            ToolTip="导出为 PDF 保存到桌面">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE792;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Text="导出 PDF" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
 
                 <Button Grid.Column="3" x:Name="DeleteButton" Style="{StaticResource DangerGhostButtonStyle}"
                         Width="74" Margin="10,0,0,0" VerticalAlignment="Center"

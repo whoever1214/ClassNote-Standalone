@@ -17,8 +17,11 @@ public class NotePromptBuilderTests
         string prompt = NotePromptBuilder.NoteSystemPrompt;
 
         Assert.Contains("只保留三部分：课程标题、核心知识点、重点及易错点", prompt);
-        Assert.Contains("原封不动", prompt);
+        // v0.8 起是**分级保真**：技术层逐字、叙述层可整理、禁止把技术内容概括掉
+        Assert.Contains("分级保真", prompt);
+        Assert.Contains("一个字都不许动", prompt);
         Assert.Contains("逐字一致", prompt);
+        Assert.Contains("禁止", prompt);          // 第三条"禁止概括"存在
         Assert.Contains("不要例题与解析", prompt);
         Assert.Contains("不要师生问答", prompt);
         // 早期那句"控制篇幅、避免流水账"与保真要求直接冲突，不得复活
@@ -36,7 +39,7 @@ public class NotePromptBuilderTests
         Assert.Contains("coreKnowledge", prompt);
         Assert.Contains("pitfalls", prompt);
         // 分段路径同样要带上保真要求与两条删除规则
-        Assert.Contains("原封不动", prompt);
+        Assert.Contains("分级保真", prompt);
         Assert.Contains("不要例题与解析", prompt);
         Assert.Contains("不要师生问答", prompt);
         // 中段素材不得被模型当成完整课程去补全
@@ -49,7 +52,9 @@ public class NotePromptBuilderTests
         string prompt = NotePromptBuilder.MergeSystemPrompt;
 
         Assert.Contains("完整保留", prompt);
-        Assert.Contains("逐字保真", prompt);
+        // v0.8 起是分级保真（技术层逐字 / 叙述层可整理 / 禁止概括技术内容），措辞同三处共享口径
+        Assert.Contains("分级保真", prompt);
+        Assert.Contains("一个字都不许动", prompt);
         Assert.Contains("只保留三部分：课程标题、核心知识点、重点及易错点", prompt);
         Assert.Contains("去重", prompt);
         // 合并阶段也必须明确禁止例题与师生问答，否则前面的删除要求会被"merge 时又写回来"
@@ -61,7 +66,9 @@ public class NotePromptBuilderTests
     [Fact]
     public void AllThreePrompts_CarryTheSameVerbatimRules()
     {
-        // 分段改造的核心风险：保真要求只在单段提示词里，分段/合并路径被稀释
+        // 分段改造的核心风险：保真要求只在单段提示词里，分段/合并路径被稀释。
+        // v0.8 起锁的是**分级保真的三条口径**（技术层逐字 / 叙述层可整理 / 禁止概括技术内容），
+        // 而不是某一句具体措辞——措辞会演化，口径不能分叉。
         foreach (var prompt in new[]
                  {
                      NotePromptBuilder.NoteSystemPrompt,
@@ -69,7 +76,9 @@ public class NotePromptBuilderTests
                      NotePromptBuilder.MergeSystemPrompt,
                  })
         {
-            Assert.Contains("原封不动", prompt);
+            Assert.Contains("分级保真", prompt);
+            Assert.Contains("一个字都不许动", prompt);
+            Assert.Contains("逐字一致", prompt);
         }
 
         // JSON 模式要求提示词里出现 "json" 字样并给出格式示例（DeepSeek 文档的硬要求）

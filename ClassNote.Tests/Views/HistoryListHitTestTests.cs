@@ -243,6 +243,8 @@ public class HistoryListHitTestTests
         public Task<Session> GetSessionAsync(Guid id) => Task.FromResult(_sessions[0]);
         public Task EndSessionAsync(Guid id, int durationSeconds) => Task.CompletedTask;
         public Task DeleteSessionAsync(Guid id) => Task.CompletedTask;
+        public Task SetSessionFavoriteAsync(Guid id, bool favorite) => Task.CompletedTask;
+        public Task<bool> IsSessionFavoriteAsync(Guid id) => Task.FromResult(false);
         public Task UploadScreenshotAsync(Guid sessionId, int seqNo, double timestamp, string type, byte[] imageData, string? url) => Task.CompletedTask;
         public Task<AudioUploadInitResult> InitAudioUploadAsync(Guid sessionId, int fileSize, string filename)
             => Task.FromResult(new AudioUploadInitResult { UploadId = "x", PartSize = 1 });

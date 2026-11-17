@@ -31,7 +31,7 @@ public class ScreenshotResult
 /// </summary>
 public class ScreenshotService : IScreenshotService
 {
-    private byte[]? _previousHash;
+    private ulong? _previousHash;
     private int _highChangeCount;
     private bool _videoMode;
     private int _stableCount;
@@ -106,7 +106,7 @@ public class ScreenshotService : IScreenshotService
     private ScreenshotResult? CaptureAndAnalyze()
     {
         using var bitmap = CaptureScreen();
-        var hash = ComputeHash(bitmap);
+        var hash = PerceptualHash.FromBitmap(bitmap);
 
         // 首帧：无前帧可比较，作为基准并直接捕获为首张"新幻灯片"（避免首帧被误丢弃）
         if (_previousHash == null)
@@ -115,7 +115,8 @@ public class ScreenshotService : IScreenshotService
             return CaptureWithType(bitmap, ScreenshotType.NewSlide);
         }
 
-        double change = CompareHash(_previousHash, hash);
+        // 变化度 = 汉明距离 / 64：与阈值（1%/8%/40%）同一量纲，语义是"这一屏变了多少比例"
+        double change = PerceptualHash.Distance(_previousHash.Value, hash) / (double)PerceptualHash.HashBits;
         _previousHash = hash;
 
         if (!_videoMode)
@@ -178,64 +179,7 @@ public class ScreenshotService : IScreenshotService
         return bmp;
     }
 
-    private static byte[] ComputeHash(Bitmap bmp)
-    {
-        // DCT 感知哈希（标准 pHash）：32x32 灰度 → 2D DCT → 取左上 8x8（不含 DC）→ 与中位数比较 → 64-bit
-        // 相较此前的 8x8 均值哈希，对亮度噪声与轻微平移更稳健，分类更接近真实感知差异。
-        const int size = 32;
-        using var small = new Bitmap(bmp, new Size(size, size));
-
-        double[,] gray = new double[size, size];
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                var px = small.GetPixel(x, y);
-                gray[y, x] = 0.299 * px.R + 0.587 * px.G + 0.114 * px.B;
-            }
-
-        // 只计算左上 8x8 频域分量（DCT-II，可分离直接二重求和）
-        double[,] dct = new double[8, 8];
-        for (int u = 0; u < 8; u++)
-            for (int v = 0; v < 8; v++)
-            {
-                double sum = 0;
-                for (int x = 0; x < size; x++)
-                    for (int y = 0; y < size; y++)
-                        sum += gray[y, x]
-                            * Math.Cos((2.0 * x + 1) * u * Math.PI / (2.0 * size))
-                            * Math.Cos((2.0 * y + 1) * v * Math.PI / (2.0 * size));
-                dct[u, v] = sum;
-            }
-
-        // 取 [1..8)×[1..8)，排除 DC 分量
-        double[] coeffs = new double[64];
-        int k = 0;
-        for (int u = 1; u <= 8; u++)
-            for (int v = 1; v <= 8; v++)
-                coeffs[k++] = dct[u - 1, v - 1];
-
-        var sorted = (double[])coeffs.Clone();
-        Array.Sort(sorted);
-        double median = (sorted[31] + sorted[32]) / 2.0;
-
-        byte[] hash = new byte[8];
-        for (int i = 0; i < 64; i++)
-            if (coeffs[i] > median)
-                hash[i / 8] |= (byte)(1 << (i % 8));
-        return hash;
-    }
-
-    private static double CompareHash(byte[] a, byte[] b)
-    {
-        int diff = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            var x = (byte)(a[i] ^ b[i]);
-            for (int j = 0; j < 8; j++)
-                if ((x & (1 << j)) != 0) diff++;
-        }
-        return diff / 64.0;
-    }
-
+    // 感知哈希与"变了多少"的判定统一由 PerceptualHash 提供（截图分类与课后选图必须同一套口径）：
+    // 换实现时只需改那一处，不会出现"录音时判定为没变、生成笔记时判定为变了"的分裂。
     public void Dispose() => Stop();
 }

@@ -263,9 +263,15 @@
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
                                         </Border>
 
-                                        <TextBlock Grid.Column="2" Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
-                                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
-                                                   Margin="0,0,8,0" />
+                                        <!-- 标题前带收藏角标（未收藏时 FavoriteMark 为空串，不占视觉位置） -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                                    VerticalAlignment="Center" Margin="0,0,8,0">
+                                            <TextBlock Text="{Binding FavoriteMark}" FontSize="13"
+                                                       Foreground="#E8A33D" Margin="0,0,4,0"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13"
+                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        </StackPanel>
 
                                         <!-- 时间戳带星期几：2026-08-30 周日 23:34 -->
                                         <TextBlock Grid.Column="3" FontSize="12"

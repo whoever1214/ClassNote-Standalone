@@ -1,0 +1,128 @@
+name: build-and-test
+
+# 为什么现在才加 CI：项目的回归网已经长到 572 个测试，而这半年的改动
+# （OCR 规范化、时间对齐、提示词、PDF 排版）里有大量"看起来对、实际改坏了"的风险点
+# （`utf8` 被当成化学式、`C02` 的下标被吞、`d_{i,j}` 变成 `d_i,j`）。
+# 网不挂在流水线上，效力就打折——人总会忘记手动跑。
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+  # 允许手动触发：排查 flaky 测试时不必等下一次提交
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  # CI 上的测试日志用英文，便于贴进 issue 与检索
+  DOTNET_CLI_UI_LANGUAGE: en
+
+jobs:
+  test:
+    # ⚠️ 必须是 Windows：主项目是 WPF（net8.0-windows10.0.19041.0），测试项目引用它，
+    # 在 ubuntu-latest 上连编译都过不去。
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # 缓存 NuGet 包：本项目依赖较重（ONNX Runtime、WebView2、QuestPDF、SQLite），
+      # 冷启动 restore 要几分钟。键与两个 csproj 内容绑定，依赖变更时自动失效。
+      - name: 缓存 NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/ClassNote.csproj', '**/ClassNote.Tests.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # ⚠️ 两个项目都要还原：ClassNote.sln 里只有主项目，测试项目不在解决方案内，
+      # 只 restore sln 会让后续 "--no-restore" 的测试构建因为缺 project.assets.json 直接失败
+      # （CI 第一次跑就是这样挂的）。
+      - name: 还原依赖
+        run: |
+          dotnet restore ClassNote.sln
+          dotnet restore ClassNote.Tests/ClassNote.Tests.csproj
+
+      # 解决方案里只有主项目；测试项目单独构建（它引用主项目）。
+      # 用 Release：与发布构建同一套优化设置，避免"Debug 下过、Release 下挂"。
+      - name: 构建（Release）
+        run: |
+          dotnet build ClassNote.sln --configuration Release --no-restore
+          dotnet build ClassNote.Tests/ClassNote.Tests.csproj --configuration Release --no-restore
+
+      # 断言"测试程序集真的包含全部测试"：若某次重构把测试文件漏出编译范围，
+      # 这里会因为数量骤降而失败——空跑一套测试比不跑更危险（绿色但没验证）。
+      - name: 清点测试数量
+        shell: pwsh
+        run: |
+          $list = dotnet test ClassNote.Tests/ClassNote.Tests.csproj --configuration Release --no-build --list-tests
+          $count = @($list | Where-Object { $_ -match '^\s+\S+\.\S+\.\S+' }).Count
+          Write-Host "发现 $count 个测试"
+          if ($count -lt 500) {
+            Write-Error "测试数量异常偏少（$count < 500）：可能有大片测试未被编译进去，请检查测试文件是否还在项目里。"
+            exit 1
+          }
+
+      - name: 跑测试
+        run: >
+          dotnet test ClassNote.Tests/ClassNote.Tests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults/ci
+
+      - name: 汇总结果到 Actions 页面
+        if: always()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem TestResults/ci -Filter *.trx -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $trx) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## 测试结果`n`n未生成 TRX 文件（测试可能在构建阶段就失败了）。"
+            exit 0
+          }
+          [xml]$doc = Get-Content $trx.FullName
+          $c = $doc.TestRun.ResultSummary.Counters
+          $failed = [int]$c.failed
+          $icon = if ($failed -gt 0) { '❌' } else { '✅' }
+
+          $lines = @(
+            "## $icon 测试结果",
+            "",
+            "| 项 | 值 |",
+            "|---|---|",
+            "| 通过 | $($c.passed) |",
+            "| 失败 | $failed |",
+            "| 总计 | $($c.total) |",
+            ""
+          )
+          if ($failed -gt 0) {
+            $lines += "### 失败的测试"
+            $lines += ""
+            foreach ($r in @($doc.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' })) {
+              $lines += "- ``$($r.testName)``"
+            }
+          }
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n")
+
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/ci/*.trx
+          if-no-files-found: warn
+          retention-days: 14

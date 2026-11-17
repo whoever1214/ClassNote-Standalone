@@ -54,6 +54,8 @@ public partial class NoteViewPage : Page
         try
         {
             await _viewModel.LoadNoteAsync(sid);
+            // 收藏图标跟着实际状态走（实心星 / 空心星）
+            FavoriteIcon.Text = _viewModel.IsFavorite ? "\uE735" : "\uE734";
         }
         catch (Exception ex)
         {
@@ -97,6 +99,79 @@ public partial class NoteViewPage : Page
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             DeleteButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// 收藏 / 取消收藏。收藏后这节的录音、转写与截图永久保留（过期清理会跳过）。
+    /// </summary>
+    private async void FavoriteButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sessionId is not Guid sid)
+            return;
+
+        FavoriteButton.IsEnabled = false;
+        try
+        {
+            bool nowFavorite = await _viewModel.ToggleFavoriteAsync(sid);
+            FavoriteIcon.Text = nowFavorite ? "\uE735" : "\uE734";   // 实心星 / 空心星
+            if (nowFavorite)
+            {
+                MessageBox.Show(
+                    "已收藏。这节课的录音、转写与截图将永久保留，不会被自动清理。",
+                    "已收藏", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"操作失败：{ex.Message}", "收藏失败",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            FavoriteButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// 用已保存的转写 + 截图重新生成笔记（不重新转写、不重新录音）。
+    /// 会花掉一次 LLM 调用，所以先问一句。
+    /// </summary>
+    private async void RegenerateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sessionId is not Guid sid)
+            return;
+
+        var confirm = MessageBox.Show(
+            "用已保存的课堂转写与截图重新生成笔记？\n\n" +
+            "· 不会重新录音，也不会重新转写；\n" +
+            "· 会消耗一次 LLM 调用（按当前模型计费）；\n" +
+            "· 原来的笔记会被新生成的笔记覆盖。",
+            "重新生成笔记",
+            MessageBoxButton.OKCancel,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK)
+            return;
+
+        RegenerateButton.IsEnabled = false;
+        ExportPdfButton.IsEnabled = false;
+        try
+        {
+            var error = await _viewModel.RegenerateAsync(sid);
+            if (error != null)
+            {
+                MessageBox.Show($"重新生成失败：{error}", "重新生成失败",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (MarkdownBrowser.CoreWebView2 != null && !string.IsNullOrEmpty(_viewModel.MarkdownHtml))
+                MarkdownBrowser.NavigateToString(_viewModel.MarkdownHtml);
+        }
+        finally
+        {
+            RegenerateButton.IsEnabled = true;
+            ExportPdfButton.IsEnabled = true;
         }
     }
 

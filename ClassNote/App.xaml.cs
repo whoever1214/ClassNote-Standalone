@@ -53,6 +53,10 @@ public partial class App : Application
         UiWatchdog.SetPhase("启动");
         UiWatchdog.Start();
 
+        // 原料过期清理（音频/截图/转写块，收藏的课除外）：后台跑，不阻塞启动；
+        // 失败只留痕——最坏情况也只是磁盘多占几天。
+        _ = ContentRetention.RunInBackgroundAsync(AppSettings.Instance.Snapshot());
+
         // 单实例：第二实例唤醒首实例后退出（首实例驻留托盘时用户从托盘/信号唤出）
         _singleInstanceMutex = new Mutex(initiallyOwned: true, InstanceMutexName, out var createdNew);
         if (!createdNew)

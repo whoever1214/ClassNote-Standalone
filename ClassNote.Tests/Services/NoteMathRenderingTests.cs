@@ -158,4 +158,31 @@ public class NoteMathRenderingTests
         Assert.Contains("Content-Security-Policy", html);                    // CSP 仍在
         Assert.Contains("script-src 'unsafe-inline' https://appassets.local", html);
     }
+
+    // ── 化学式（mhchem）────────────────────────────────────────
+
+    [Fact]
+    public void MathJaxConfig_LoadsMhchemForChemistry()
+    {
+        var config = NoteHtmlRenderer.MathJaxConfig;
+
+        // 化学课需要 \ce{...}：没有这条，化学式与离子方程式在笔记页里排不出来
+        Assert.Contains("mhchem", config);
+        Assert.Contains("load: ['[tex]/mhchem']", config);
+        // 分隔符口径不得因新增扩展而走样（回归历史事故）
+        Assert.Contains(@"['\\(', '\\)']", config);
+        Assert.DoesNotContain("['(', ')']", config);
+    }
+
+    [Fact]
+    public void BundledMathJax_ActuallyContainsMhchem()
+    {
+        // 配置里声明加载了 mhchem，随包的那份 MathJax 就必须真的带这个扩展——
+        // 否则页面会静默少渲染化学式（配置看起来是对的，效果却没有）。
+        string assetPath = Path.Combine(AppContext.BaseDirectory, "assets", "mathjax-tex-svg.js");
+        Assert.True(File.Exists(assetPath), $"随包的 MathJax 应当被复制到输出目录：{assetPath}");
+
+        string content = File.ReadAllText(assetPath);
+        Assert.Contains("mhchem", content);
+    }
 }

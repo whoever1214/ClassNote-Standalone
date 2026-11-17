@@ -11,41 +11,61 @@ namespace ClassNote.Services;
 /// </summary>
 internal static class NotePromptBuilder
 {
-    /// <summary>单段（一次性生成完整笔记）的 system prompt。</summary>
+    /// <summary>
+    /// 单段（一次性生成完整笔记）的 system prompt。
+    ///
+    /// ⚠️ 保真口径**必须**引用共享的 <see cref="VerbatimRules"/>，不能在这里另写一套：
+    /// v0.7 及以前三处提示词各写一份，改了一处忘了另两处，于是就出现过
+    /// "分段路径允许改写、单段路径要求照抄"这种同一节课两套口径的情况。
+    /// </summary>
     internal const string NoteSystemPrompt =
-        "你是一名资深助教，负责把课堂录音转写和课件截图 OCR 整理成课堂笔记。请用 Markdown 输出，只保留三部分：课程标题、核心知识点、重点及易错点。\n\n" +
-        "整理原则：\n" +
-        "1. 以知识点为核心：逐条提炼本节课的核心知识点（核心知识点尽量不做修改、原封不动），涵盖概念定义、公式定理、关键结论、解题模板与解题技巧，按知识逻辑分层组织。\n" +
-        "2. 核心知识点尽量不做修改、原封不动地记录：解题模板、解题技巧、公式定理、定义、老师反复强调的结论，一律照抄【课堂录音转写】与【课件/板书截图 OCR】中的原始表述，不得改写、概括、精简或换词；不得省略中间步骤与限定条件。若原文是口语，先按原意整理成通顺句子，但技术内容（术语、公式、数字、符号、条件）必须与原文逐字一致。宁可保留原文，也不要改写。\n" +
-        "3. 忽略非教学内容：课堂开头的寒暄问候、点名、课堂管理、设备调试等与知识点无关的白话一律不写入笔记。\n" +
-        "4. 不要例题与解析：删除所有例题、习题及其解答过程（但老师给出的解题模板、通用解题步骤与解题技巧属于核心知识点，须原样保留）。\n" +
-        "5. 不要师生问答：删除提问与回答的对话形式内容（其中的知识点按原则 1、2 归纳进核心知识点）。\n" +
-        "6. 重点及易错点：单独成节，收录老师强调的重点、考试提示、易错点与易混淆概念，注明原文的说法。\n" +
-        "7. 去重与排序：同一话题合并归纳，重要程度越高越靠前；但合并仅限于重复内容，不得因此改写或丢失技术细节。";
+        "你是一名资深助教，负责把课堂录音转写和课件截图（图片或 OCR 文本）整理成课堂笔记。请用 Markdown 输出，只保留三部分：课程标题、核心知识点、重点及易错点。\n\n" +
+        VisionRules + "\n\n" +
+        VerbatimRules + "\n\n" +
+        EvidenceRules + "\n" +
+        ExamQuestionRules;
+
+    /// <summary>
+    /// 图片素材（多模态）专用的保真口径。只在**本次请求真的附了图片**时才进提示词，
+    /// 纯 OCR 模式不加——否则模型会去找并不存在的图片。
+    /// </summary>
+    internal const string VisionRules =
+        "关于图片素材：\n" +
+        "1. 随附的截图按时间顺序排列，每张前面有一行「[图片 K] 类型 @ 时间」，标明它对应的录音时刻；\n" +
+        "2. 板书、公式、图形、题目以图片为准，OCR 文本只作为辅助（两者冲突时以图片为准，并在正文里说明差异）；\n" +
+        "3. 图片上看不清的内容**不要猜**，原样标注「看不清」；能看清的公式与符号必须逐字照抄，不要改写、不要补全。\n";
 
     /// <summary>分段整理的 system prompt：素材可能是课程中段，不得补全、不得假设结尾。</summary>
     internal const string SegmentSystemPrompt =
-        "你是一名资深助教，正在分段整理一节课堂的录音转写与课件截图 OCR。" +
+        "你是一名资深助教，正在分段整理一节课堂的录音转写与课件截图（图片或 OCR 文本）。" +
         "你拿到的可能只是整节课的中间片段：不要假设能看到开头或结尾，不要补全缺失内容，只整理当前片段中确实出现的内容。" +
         "请用 JSON 输出，只包含 coreKnowledge 与 pitfalls 两个字段。\n\n" +
         VerbatimRules + "\n\n" +
         OcrNoiseRules + "\n" +
+        EvidenceRules + "\n" +
         "输出格式（严格遵守，只输出 JSON，不要 Markdown 代码块，不要任何解释文字）：\n" +
         "{\"coreKnowledge\":\"## 核心知识点\\n- 知识点：原文或按原意整理后的表述（技术内容逐字保留）\\n\",\"pitfalls\":\"- 易错点：原文的说法\\n\"}";
 
-    /// <summary>合并阶段的 system prompt：分段 JSON 是事实源，原文是校对依据。</summary>
+    /// <summary>
+    /// 合并阶段的 system prompt：分段 JSON 是事实源，原文是校对依据。
+    /// 同样引用共享的 <see cref="VerbatimRules"/>（见 <see cref="NoteSystemPrompt"/> 的说明）。
+    /// </summary>
     internal const string MergeSystemPrompt =
         "你是一名资深助教。下面给出同一节课各分段的整理结果，请合并成一份完整的课堂笔记，用 Markdown 输出。" +
         "只保留三部分：课程标题、核心知识点、重点及易错点。\n\n" +
-        "合并要求：\n" +
+        VerbatimRules + "\n\n" +
+        "合并补充要求：\n" +
         "1. 完整保留：本课程所有分段中的核心知识点都必须进入最终笔记，不得整体省略、不得只留摘要。\n" +
-        "2. 逐字保真：各分段结果里的核心知识点已经是原文的表述，合并时原封不动地照抄，不得改写、概括、精简或换词；术语、公式、数字、符号、限定条件必须与分段结果逐字一致，中间步骤不得省略。**公式的 $...$ 分隔符必须原样保留**，不要为了「整齐」把公式拆开或去掉分隔符。\n" +
-        "3. 去重：只合并完全重复的内容，保留信息最完整的那份表述；合并仅限于重复，不得因此丢失技术细节。\n" +
-        "4. 结构：按知识逻辑组织，重要程度越高越靠前；不要出现例题与解析、师生问答、课堂管理等与知识点无关的内容。\n" +
-        "5. 校对：若提供了原始素材且发现分段结果遗漏了其中的核心知识点、定义、公式或限定条件，用原始素材中的原文补齐（照抄原文，不改写）。\n" +
-        "6. 结尾只输出笔记正文，不要任何说明、前言或总结性致辞。\n" +
-        "7. OCR 素材：核对时若遇到原始素材摘录里逐字拆开、明显识别错误的内容，能确定含义的按正常写法写出，" +
-        "确定不了的原样保留并注明「OCR 不清」，不要猜符号。";
+        "2. 去重：只合并完全重复的内容（正文完全一致），保留信息最完整的那份表述；" +
+        "合并仅限于重复，不得因此丢失技术细节。\n" +
+        "3. 结构：按知识逻辑组织，重要程度越高越靠前。" +
+        "不要出现例题与解析、师生问答、课堂管理等与知识点无关的内容（试卷原题按下面的口径单独成节）。\n" +
+        "4. 校对：若提供了原始素材且发现分段结果遗漏了其中的核心知识点、定义、公式或限定条件，" +
+        "用原始素材中的原文补齐（照抄原文，不改写）。校对时若遇到逐字拆开或明显识别错误的内容，" +
+        "能确定含义的按正常写法写出，确定不了的原样保留并注明「OCR 不清」，不要猜符号。\n" +
+        "5. 结尾只输出笔记正文，不要任何说明、前言或总结性致辞。\n\n" +
+        EvidenceRules + "\n" +
+        ExamQuestionRules;
 
     /// <summary>
     /// 多来源素材（麦克风与系统声音分轨录制）专用：合并阶段的分辨要求。
@@ -60,15 +80,25 @@ internal static class NotePromptBuilder
     /// 一条结构化笔记条目。**分段调用一律产出条目列表**，这样后端才能做确定性处理
     /// （按标题去重、排序、回校），而不是把整篇 Markdown 交给模型反复改写。
     /// </summary>
-    /// <param name="Title">条目标题（去重的依据）。</param>
+    /// <param name="Title">条目标题（仅用于展示与排序，**不参与去重**——见 <see cref="Deduplicate"/>）。</param>
     /// <param name="Body">条目正文：原文表述，技术内容逐字保留。</param>
-    /// <param name="Kind"><c>knowledge</c> = 核心知识点；<c>pitfall</c> = 重点/易错点。</param>
+    /// <param name="Kind">
+    /// <c>knowledge</c> = 核心知识点；<c>pitfall</c> = 重点/易错点；<c>exam</c> = 试卷原题（单独成节）。
+    /// </param>
     /// <param name="Source">来源词（「现场」「课件」）；单来源录音为空串。</param>
     /// <param name="SegmentIndex">产出该条目的分段序号（1 起，单段为 1）。</param>
-    internal sealed record NoteItem(string Title, string Body, string Kind, string Source, int SegmentIndex)
+    /// <param name="Evidence">
+    /// 证据等级（「现场」「课件」「双证」「冲突」）。
+    /// 由模型声明，但**后端会核对**：声称"现场"却在转写里找不到佐证时会被降级（见 <see cref="NoteQualityGuard"/>）。
+    /// </param>
+    internal sealed record NoteItem(string Title, string Body, string Kind, string Source, int SegmentIndex,
+        string Evidence = "")
     {
         /// <summary>是否为易错点条目。</summary>
         internal bool IsPitfall => string.Equals(Kind, "pitfall", StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>是否为试卷原题条目（最终笔记里单独成节，绝不与结论混在一处）。</summary>
+        internal bool IsExam => string.Equals(Kind, "exam", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>分段调用的条目 schema（JSON）：一次产出条目数组，供后端结构化合并。</summary>
@@ -76,8 +106,9 @@ internal static class NotePromptBuilder
         "{\"items\":[" +
         "{\"title\":\"条目短标题（用于去重，同一知识点在不同片段请用同一标题）\"," +
         "\"body\":\"条目正文：原文或按原意整理后的表述，技术内容逐字保留\"," +
-        "\"kind\":\"knowledge 或 pitfall\"," +
-        "\"source\":\"本条来自哪一侧：现场 或 课件；没有分来源时留空字符串\"}" +
+        "\"kind\":\"knowledge / pitfall / exam 三选一\"," +
+        "\"source\":\"本条来自哪一侧：现场 或 课件；没有分来源时留空字符串\"," +
+        "\"evidence\":\"现场 / 课件 / 双证 / 冲突 四选一（见证据等级口径）\"}" +
         "]}";
 
     /// <summary>
@@ -107,14 +138,51 @@ internal static class NotePromptBuilder
         "来源标注口径：来自【课件/板书截图 OCR】的内容，source 一律填「课件」；" +
         "只有能确认是教室现场板书时才填「现场」；判断不了就留空字符串。\n";
 
+    /// <summary>
+    /// 证据等级口径（v0.8 新增）。
+    ///
+    /// 解决的问题：**"老师讲过的结论"与"课件/试卷上印着的一行字"在成品笔记里现在长得一模一样**。
+    /// 化学课实测最危险的一例：「金属钠着火时，可用泡沫灭火器或干砂灭火」——
+    /// 它是试卷判断题的**选项原句**（而且是错的，钠燃烧生成过氧化钠，泡沫灭火器含水与二氧化碳），
+    /// 却被未加限定地写进了「核心知识点」，用户完全看不出它是题目还是结论。
+    ///
+    /// 因此在**条目层**强制标注证据来源，并由后端核对（见 NoteQualityGuard）：
+    /// 模型声称"现场"却在转写里找不到佐证时会被降级——口头的自我声明不算数。
+    /// </summary>
+    internal const string EvidenceRules =
+        "证据等级口径：每条必须标注 evidence，取值只有四种：\n" +
+        "1. 「双证」：转写里老师讲过、课件上也写了（最可信）；\n" +
+        "2. 「现场」：只在转写里出现（老师讲的结论）；\n" +
+        "3. 「课件」：只在课件/板书截图里出现，转写里从未提到（**多为试卷原题或课件上的一行字，不一定是结论**）；\n" +
+        "4. 「冲突」：两侧对同一处说法不一致（以转写为准，并在正文里把两种说法都写出来）。\n" +
+        "注意：转写是**语音识别结果**，可能出现同音字误识；当转写与课件冲突时不要一律认为课件错。\n";
+
+    /// <summary>
+    /// 试卷原题的处理口径（v0.8 新增）。
+    ///
+    /// 这是"错误断言被当成事实"的根治办法：以前提示词要求"删除所有例题与习题及其解答"，
+    /// 而课件截图里的真题/卷子是**用户要保留的内容**，模型于是把它揉进「核心知识点」，
+    /// 判断题的错项就变成了事实陈述。这里把出路写清楚：单独一节、逐字保留、标明原题，
+    /// 绝不与老师的结论混在一处。
+    /// </summary>
+    internal const string ExamQuestionRules =
+        "试卷/真题原题的处理口径：\n" +
+        "1. 课件截图里出现的试卷原题、真题、习题以及它们的选项，**没有被老师讲解过的，一律不进「核心知识点」**；" +
+        "把它们逐字保留，放进 kind=exam 的条目（最终笔记里是单独的「习题（原题）」一节）。\n" +
+        "2. **绝不能把选项当成事实陈述**：选项原句（例如「可用泡沫灭火器灭火」）在题目里可能是错的，" +
+        "照抄进知识点会让用户以为它是结论。是题就标成题。\n" +
+        "3. 老师**讲解过**的题：题目本身仍按上一条处理；老师的结论、解题模板与技巧属于知识点，照常整理。\n";
+
     /// <summary>分段整理的 system prompt（条目 schema）。</summary>
     internal const string SegmentItemsSystemPrompt =
         "你是一名资深助教，正在分段整理一节课堂的录音转写与课件截图 OCR。" +
         "你拿到的可能只是整节课的中间片段：不要假设能看到开头或结尾，不要补全缺失内容，只整理当前片段中确实出现的内容。" +
-        "请用 JSON 输出，只包含一个 items 数组，每个元素含 title / body / kind / source 四个字段。\n\n" +
+        "请用 JSON 输出，只包含一个 items 数组，每个元素含 title / body / kind / source / evidence 五个字段。\n\n" +
         VerbatimRules + "\n\n" +
         OcrNoiseRules + "\n" +
         OcrSourceRules + "\n" +
+        EvidenceRules + "\n" +
+        ExamQuestionRules + "\n" +
         "输出格式（严格遵守，只输出 JSON，不要 Markdown 代码块，不要任何解释文字）：\n" +
         SegmentItemsSchema;
 
@@ -211,11 +279,12 @@ internal static class NotePromptBuilder
     {
         var kb = new StringBuilder();
         var pf = new StringBuilder();
+        var ex = new StringBuilder();
 
         foreach (var entry in polished)
         {
             var item = items[entry.Index - 1];
-            var target = item.IsPitfall ? pf : kb;
+            var target = BucketFor(item, kb, pf, ex);
 
             if (target.Length > 0) target.AppendLine();
             if (!string.IsNullOrWhiteSpace(entry.Transition)) target.AppendLine(entry.Transition);
@@ -223,7 +292,7 @@ internal static class NotePromptBuilder
             target.AppendLine(entry.Body.Trim());
         }
 
-        return ComposeNote(course, kb, pf);
+        return ComposeNote(course, kb, pf, ex);
     }
 
     /// <summary>按条目原顺序拼装（不做任何改写）——润色未通过校验时的确定性兜底。</summary>
@@ -231,20 +300,38 @@ internal static class NotePromptBuilder
     {
         var kb = new StringBuilder();
         var pf = new StringBuilder();
+        var ex = new StringBuilder();
 
         foreach (var item in items)
         {
-            var target = item.IsPitfall ? pf : kb;
+            var target = BucketFor(item, kb, pf, ex);
             if (target.Length > 0) target.AppendLine();
             if (!string.IsNullOrWhiteSpace(item.Title)) target.Append("**").Append(item.Title).Append("**：");
             target.AppendLine(item.Body.Trim());
         }
 
-        return ComposeNote(course, kb, pf);
+        return ComposeNote(course, kb, pf, ex);
     }
 
-    /// <summary>拼成最终笔记：标题 + 核心知识点 + （有则）重点及易错点。</summary>
-    private static string ComposeNote(string course, StringBuilder knowledge, StringBuilder pitfalls)
+    /// <summary>
+    /// 条目该进哪一节：易错点 → 重点及易错点；试卷原题 → 习题（原题）；其余 → 核心知识点。
+    ///
+    /// 试卷原题单独成节是 v0.8 的关键改动：以前它们被揉进「核心知识点」，
+    /// 于是判断题的**选项原句**（可能是错的）变成了事实陈述，用户看不出那是题。
+    /// </summary>
+    private static StringBuilder BucketFor(NoteItem item, StringBuilder knowledge, StringBuilder pitfalls,
+        StringBuilder exams)
+        => item.IsExam ? exams : item.IsPitfall ? pitfalls : knowledge;
+
+    /// <summary>
+    /// 拼成最终笔记：标题 + 核心知识点 + （有则）重点及易错点 + （有则）习题（原题）。
+    ///
+    /// 「习题（原题）」一节带一句固定说明：**这些是题目，不是结论**。
+    /// 化学课实测过"判断题选项被当成事实写进知识点"的事故（「金属钠着火时，可用泡沫灭火器」），
+    /// 这一节 + 说明就是防止用户把那类句子读成结论。
+    /// </summary>
+    private static string ComposeNote(string course, StringBuilder knowledge, StringBuilder pitfalls,
+        StringBuilder exams)
     {
         var sb = new StringBuilder();
         sb.Append("# ").AppendLine(course);
@@ -259,6 +346,15 @@ internal static class NotePromptBuilder
             sb.AppendLine();
             sb.AppendLine(pitfalls.ToString().Trim());
         }
+        if (exams.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("## 习题（原题）");
+            sb.AppendLine();
+            sb.AppendLine("> 以下为课件/试卷上的原题，**不是老师的结论**。选项本身可能是错的，请按题目要求判断。");
+            sb.AppendLine();
+            sb.AppendLine(exams.ToString().Trim());
+        }
         return sb.ToString().Trim();
     }
 
@@ -266,30 +362,50 @@ internal static class NotePromptBuilder
     internal sealed record DedupResult(IReadOnlyList<NoteItem> Items, int MergedCount);
 
     /// <summary>
-    /// **确定性去重**：仅当"归一化标题 + 归一化正文"双双完全一致时才合并（保留先出现的那条）。
+    /// **确定性去重**：当**归一化正文**完全一致时合并（保留先出现的那条）。
     ///
-    /// 刻意不做相似度合并：类似「洛必达法则适用条件」与「洛必达条件」这样的标题是否同一知识点，
-    /// 程序无法可靠判定，而按相似度合并会**静默丢掉一条正文**。宁可留重复让用户看到，
+    /// 键只含正文，**不含标题也不含 kind**（v0.8 改动，理由如下）：
+    /// · 加 <c>kind</c> 会让"同一句话被一段归为知识点、另一段归为易错点"两条都留下——
+    ///   而模型在**每段独立**分类，这种分裂必然发生。化学课实测：同一句
+    ///   「金属钠着火时，可用泡沫灭火器或干砂灭火」在「核心知识点」和「重点及易错点」里各出现一次，
+    ///   整篇笔记的重复行占比因此到 25.4%（这正是本改动要治的病）。
+    /// · 加 <c>title</c> 则更弱：同一内容在不同段被起了不同标题时就漏合并，而标题是模型自己起的，
+    ///   从来不是"这条内容是不是重复"的可靠信号。正文才是内容本身的指纹。
+    ///
+    /// 合并时的归类取舍：只要其中任一实例被判为易错点，保留的条目就按易错点归类——
+    /// 因为"易错"这个判断比"知识点"更具体，反过来会丢掉一条易错提示。
+    ///
+    /// 刻意**不做相似度合并**：类似「洛必达法则适用条件」与「洛必达条件」是否同一知识点，
+    /// 程序无法可靠判定，按相似度合并会**静默丢掉一条正文**。宁可留重复让用户看到，
     /// 也不做无法解释的合并。
     /// </summary>
     internal static DedupResult Deduplicate(IReadOnlyList<NoteItem> items)
     {
         var kept = new List<NoteItem>(items.Count);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var indexByBody = new Dictionary<string, int>(StringComparer.Ordinal);
         int merged = 0;
 
         foreach (var item in items)
         {
-            // 键包含 kind：同一条内容被一段归为知识点、另一段归为易错点时必须都留下，
-            // 否则会丢掉一种归类（两类在最终笔记里进的是不同章节）
-            string key = (item.IsPitfall ? "pitfall" : "knowledge")
-                         + "\u0001" + NormalizeForCompare(item.Title)
-                         + "\u0001" + NormalizeForCompare(item.Body);
-            if (!seen.Add(key))
+            string key = NormalizeForCompare(item.Body);
+            if (key.Length == 0)
             {
-                merged++;
+                // 正文为空的条目没有可判定的内容：原样保留（由拼装阶段决定怎么呈现）
+                kept.Add(item);
                 continue;
             }
+
+            if (indexByBody.TryGetValue(key, out int existing))
+            {
+                merged++;
+                var previous = kept[existing];
+                // 保留先出现的位置与标题，但把归类提升为"更具体"的那一个
+                if (item.IsPitfall && !previous.IsPitfall)
+                    kept[existing] = previous with { Kind = item.Kind };
+                continue;
+            }
+
+            indexByBody[key] = kept.Count;
             kept.Add(item);
         }
         return new DedupResult(kept, merged);
@@ -348,14 +464,30 @@ internal static class NotePromptBuilder
         public string? Body { get; set; }
     }
 
-    /// <summary>共享的保真规则：单段、分段、合并三处口径一致。</summary>
+    /// <summary>
+    /// 共享的保真规则：单段、分段、合并三处口径一致。
+    ///
+    /// **v0.8 改写为分级保真**（原先要求"一切都照抄、宁可保留原文也不要改写"）：
+    /// 那条规则在化学课上直接导致了两个后果——① OCR 坏字被原样端进笔记
+    /// （`Na2C03 古亻本` 照抄成"原文说法"）；② 叙述性内容也被要求逐字，模型只好原句重复，
+    /// 加上分段之间的重叠，整篇重复行占比到 25.4%。
+    /// 现在按"内容层级"给不同权限：技术层一个字不许动，叙述层允许整理句子但不得丢限定条件。
+    /// </summary>
     private const string VerbatimRules =
         "核心要求：\n" +
-        "1. 保真优先（核心知识点尽量不做修改、原封不动地记录）：解题模板、解题技巧、公式定理、定义、限定条件、老师反复强调的结论，必须照抄素材中的原始表述，不得改写、概括、换词或省略中间步骤；口语可整理成通顺句子，但技术内容（术语、公式、数字、符号、条件）必须与原文逐字一致。宁可保留原文，也不要改写。\n" +
-        "2. 不要例题与解析：删除例题、习题及其解答过程（老师的解题模板、通用解题步骤与解题技巧本身属于核心知识点，须原样保留）。\n" +
+        "1. 分级保真，按内容层级给不同权限：\n" +
+        "   · **一级（一个字都不许动）**：公式、化学式、离子符号、方程式、数字、单位、专有名词、" +
+        "限定条件（温度/浓度/条件/前提）。这些必须与素材**逐字一致**，不得改写、不得省略、不得换符号。\n" +
+        "   · **二级（可整理句子）**：叙述性说明、定义、推导过程。可以调整语序、合并同义句，但**不得改变原意、不得省略限定条件**。\n" +
+        "   · **三级（禁止）**：把技术内容概括成更高层的说法（例如把「过氧化钠与水反应生成氢氧化钠和氧气」" +
+        "概括成「过氧化钠的性质」）。概括掉的内容对用户就是永久丢失。\n" +
+        "2. 不要例题与解析：删除老师随堂讲的例题、习题及其解答过程（老师的解题模板、通用解题步骤与解题技巧本身属于核心知识点，须原样保留）。" +
+        "**注意**：课件截图里的试卷原题/真题不属于此列——它们要逐字保留并单独成节，绝不可混进「核心知识点」当结论，更不可把选项原句当成事实陈述。\n" +
         "3. 不要师生问答：不要记录问答对话形式，其中出现的知识点按第 1 条整理进核心知识点。\n" +
         "4. 忽略非教学内容：寒暄问候、点名、闲聊、设备调试、课堂管理等与知识点无关的内容一律不写入。\n" +
         "5. 宁多勿漏：素材中出现的知识点不要因为内容零碎而丢弃；技术细节、公式、数字、符号与限定条件宁可保留原文，也不要因求简洁而丢失或改写。\n" +
+        "6. 以转写为准：当【课堂录音转写】与【课件/板书截图 OCR】对同一处说法不一致时，" +
+        "**以转写为准**；确实无法判断时不猜，按素材原样保留并注明「OCR 不清」。\n" +
         MathFormatRules;
 
     /// <summary>
@@ -371,10 +503,17 @@ internal static class NotePromptBuilder
     /// 历史上正是这一条写错，导致笔记里每一对括号都被渲染成行间公式。
     /// </summary>
     private const string MathFormatRules =
-        "6. 数学公式用 $...$ 包裹（只补分隔符，内容一个字都不改）：状态转移方程、递推式、下标与上下标、求和/取最值等表达式，写成 $f(n) = \\min(f(n-1)+1, f(n-5)+1)$ 这样的形式，行间公式用 $$...$$。\n" +
+        "7. 数学公式用 $...$ 包裹（只补分隔符，内容一个字都不改）：状态转移方程、递推式、下标与上下标、求和/取最值等表达式，写成 $f(n) = \\min(f(n-1)+1, f(n-5)+1)$ 这样的形式，行间公式用 $$...$$。\n" +
         "   · 公式内部的写法**照抄原文**：原文写 d[i][j] 就写 $d[i][j]$，不要擅自改成 d_{i,j}；原文的括号、逗号、符号一律保留。\n" +
         "   · 若课件 OCR 把一个公式的上下标/分式拆成了多行（例如 d 单独一行、i 一行、j 一行），只有在能明确判断它们属于同一个公式时才合并成一行；判断不了就原样保留，不要猜。\n" +
-        "   · 绝对不要把普通句子、括号说明、编号包进 $...$；正文里的圆括号与方括号是普通文字，不是公式分隔符。";
+        "   · 绝对不要把普通句子、括号说明、编号包进 $...$；正文里的圆括号与方括号是普通文字，不是公式分隔符。\n" +
+        "8. 化学式与方程式（v0.8 追加）：\n" +
+        "   · 元素符号与原子个数照抄原文：原文写 Na2O2 就写 Na2O2（软件会把它排成下标显示），**不要**自己改写成别的写法。\n" +
+        "   · 离子电荷写在符号右侧：Ca2+ / OH- / SO42-，不要省略电荷数字。\n" +
+        "   · 方程式用箭头：`2Na2O2 + 2H2O → 4NaOH + O2↑`。原文若写成 `===` 或 `＝`，按箭头输出；气体用 ↑、沉淀用 ↓。\n" +
+        "   · 反应条件（加热、点燃、催化剂）必须保留，不要因为「看起来多余」而删掉——**条件是考点**。\n" +
+        "   · 元素符号与数字之间的混淆（例如把 O 认成 0、把 l 认成 1）只有在**转写里能确认正确写法**时才改；" +
+        "拿不准就照抄原样并注明「OCR 不清」，绝不猜；若该处已被标注「OCR 不清」，说明软件也不确定，不要自行编一个答案。";
 
     /// <summary>
     /// JSON 模式下必须显式设置 max_tokens：DeepSeek 文档明确要求，否则 JSON 字符串可能
@@ -390,7 +529,7 @@ internal static class NotePromptBuilder
     /// 单来源录音不加这条，避免给模型多余的结构暗示。
     /// </param>
     internal static string BuildSingleNotePrompt(string course, string transcript, string ocrText,
-        bool multiSource = false)
+        bool multiSource = false, int imageCount = 0)
     {
         var sb = new StringBuilder();
         sb.Append("课程：").Append(course).AppendLine();
@@ -398,9 +537,18 @@ internal static class NotePromptBuilder
         sb.AppendLine("【课堂录音转写】");
         sb.AppendLine(transcript);
         sb.AppendLine();
-        sb.AppendLine("【课件/板书截图 OCR】");
-        sb.AppendLine(ocrText);
-        sb.AppendLine();
+        if (imageCount > 0)
+        {
+            sb.AppendLine($"【课件/板书截图（随附 {imageCount} 张图片，按时间顺序）】");
+            sb.AppendLine("图片紧接着本条消息发送，每张前面有一行「[图片 K] 类型 @ 时间」的说明。");
+            sb.AppendLine();
+        }
+        if (imageCount == 0 || !string.IsNullOrWhiteSpace(ocrText))
+        {
+            sb.AppendLine("【课件/板书截图 OCR】");
+            sb.AppendLine(ocrText);
+            sb.AppendLine();
+        }
         sb.AppendLine("请按以下要求整理成课堂笔记（Markdown），只保留三部分：课程标题、核心知识点、重点及易错点：");
         sb.AppendLine("- 推荐结构：# 课程标题 → ## 核心知识点 → ## 重点及易错点；除这三部分外不要再加其它章节；");
         sb.AppendLine("- 核心知识点尽量不做修改、原封不动记录：解题模板、解题技巧、公式定理、定义、限定条件、老师反复强调的结论，必须照抄上面【课堂录音转写】与【课件/板书截图 OCR】的原始表述，不要改写、不要概括、不要换词、不要省略步骤；");
@@ -428,7 +576,7 @@ internal static class NotePromptBuilder
     /// 不重复铺陈分段说明，直接要求按同样规则输出 JSON。
     /// </summary>
     internal static string BuildSegmentPrompt(string course, NoteSegment segment, bool isRetry = false,
-        bool multiSource = false, bool itemsSchema = false)
+        bool multiSource = false, bool itemsSchema = false, int imageCount = 0)
     {
         var sb = new StringBuilder();
         if (!isRetry)
@@ -446,9 +594,18 @@ internal static class NotePromptBuilder
         sb.AppendLine("【课堂录音转写】");
         sb.AppendLine(segment.Transcript.Length > 0 ? segment.Transcript : "（本段无转写内容）");
         sb.AppendLine();
-        sb.AppendLine("【课件/板书截图 OCR】");
-        sb.AppendLine(segment.OcrText.Length > 0 ? segment.OcrText : "（本段无截图内容）");
-        sb.AppendLine();
+        if (imageCount > 0)
+        {
+            sb.AppendLine($"【课件/板书截图（本段随附 {imageCount} 张图片，按时间顺序）】");
+            sb.AppendLine("图片紧接着本条消息发送，每张前面有一行「[图片 K] 类型 @ 时间」的说明。");
+            sb.AppendLine();
+        }
+        if (imageCount == 0 || segment.OcrText.Length > 0)
+        {
+            sb.AppendLine("【课件/板书截图 OCR】");
+            sb.AppendLine(segment.OcrText.Length > 0 ? segment.OcrText : "（本段无截图内容）");
+            sb.AppendLine();
+        }
         if (itemsSchema)
         {
             sb.AppendLine("请整理本段素材，只输出 JSON，形如：");
@@ -565,7 +722,8 @@ internal static class NotePromptBuilder
                 Body: body,
                 Kind: string.IsNullOrWhiteSpace(rawItem.Kind) ? "knowledge" : rawItem.Kind.Trim(),
                 Source: (rawItem.Source ?? "").Trim(),
-                SegmentIndex: segmentIndex));
+                SegmentIndex: segmentIndex,
+                Evidence: (rawItem.Evidence ?? "").Trim()));
         }
         return result;
     }
@@ -704,5 +862,8 @@ internal static class NotePromptBuilder
 
         [Newtonsoft.Json.JsonProperty("source")]
         public string? Source { get; set; }
+
+        [Newtonsoft.Json.JsonProperty("evidence")]
+        public string? Evidence { get; set; }
     }
 }

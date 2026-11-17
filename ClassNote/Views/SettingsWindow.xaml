@@ -189,6 +189,15 @@
 
                         <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,4,0,16" />
 
+                        <TextBlock Text="原料留存（天）" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <TextBox x:Name="RetentionDaysBox" Width="72" HorizontalAlignment="Left" Margin="0,0,0,4" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,14"
+                                   Text="笔记始终保留；这里清理的是原料（录音、截图、转写）。非收藏的课超过这个天数后，音频与截图会被删除、转写也会清掉。收藏的课永不清理；语音识别没成功的课也不清理（音频是唯一能补救的素材）。填 0 = 不自动清理。默认 7 天。" />
+
+                        <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="0,4,0,16" />
+
                         <CheckBox x:Name="TouchOptimizationsCheck"
                                   Content="触摸屏优化（一体机 / 触摸屏建议保持勾选）"
                                   Margin="0,0,0,4" />
@@ -224,6 +233,31 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled" Margin="0,0,18,0">
                     <StackPanel>
+
+                        <!-- 笔记里的截图素材：图片直送 / OCR 文本（v1.2） -->
+                        <TextBlock Text="笔记里的截图用什么形态" FontSize="12"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <ComboBox x:Name="ScreenshotInputCombo" Margin="0,0,0,4"
+                                  SelectionChanged="ScreenshotInputCombo_SelectionChanged" />
+                        <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                   TextWrapping="Wrap" Margin="2,0,0,10"
+                                   Text="「仅截图图片」把截图直接交给多模态模型：公式、化学式、板书图形不会被识别成乱码，按图片 token 计费；「仅 OCR 文本」最省 token 且可完全离线，但公式容易碎。" />
+
+                        <StackPanel x:Name="VisionOptionsPanel" Margin="0,0,0,14">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <TextBlock Text="每节课最多送" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox x:Name="VisionMaxImagesBox" Width="56" Margin="8,0,6,0" />
+                                <TextBlock Text="张（长边" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox x:Name="VisionMaxEdgeBox" Width="64" Margin="8,0,6,0" />
+                                <TextBlock Text="像素）" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                            </StackPanel>
+                            <TextBlock FontSize="11" Foreground="{StaticResource TextHintBrush}"
+                                       TextWrapping="Wrap" Margin="2,0,0,0"
+                                       Text="实测：一节课平均 67.6 张截图、最多 125 张，其中约 73% 是同一屏的重复帧。生成笔记前会按感知哈希去重（只保留每一屏的最后一帧）再截断到上限；图片按长边缩放后重新编码，30 张约 12 MB。" />
+                        </StackPanel>
 
                         <TextBlock Text="截图文字识别引擎" FontSize="12"
                                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
