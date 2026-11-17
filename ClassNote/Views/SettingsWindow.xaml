@@ -247,10 +247,12 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                 <TextBlock Text="每节课最多送" FontSize="12" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextSecondaryBrush}" />
-                                <TextBox x:Name="VisionMaxImagesBox" Width="56" Margin="8,0,6,0" />
+                                <TextBox x:Name="VisionMaxImagesBox" Width="76" Margin="8,0,6,0"
+                                         TextAlignment="Right" />
                                 <TextBlock Text="张（长边" FontSize="12" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextSecondaryBrush}" />
-                                <TextBox x:Name="VisionMaxEdgeBox" Width="64" Margin="8,0,6,0" />
+                                <TextBox x:Name="VisionMaxEdgeBox" Width="84" Margin="8,0,6,0"
+                                         TextAlignment="Right" />
                                 <TextBlock Text="像素）" FontSize="12" VerticalAlignment="Center"
                                            Foreground="{StaticResource TextSecondaryBrush}" />
                             </StackPanel>

@@ -61,7 +61,7 @@ if errorlevel 1 goto :fail
 echo.
 echo ============================================
 echo   SUCCESS. Installer written to:
-echo   %CD%\dist\ClassNote-1.1.1-setup-x64.exe
+echo   %CD%\dist\ClassNote-1.1.2-setup-x64.exe
 echo ============================================
 exit /b 0
 
