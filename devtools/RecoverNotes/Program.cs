@@ -106,7 +106,7 @@ internal static class Program
         var settings = AppSettings.Instance.Snapshot();
         var stt = SenseVoiceSttService.Shared;
 
-        var ocr = OcrServiceFactory.Create(settings);
+        var ocr = new WindowsOcrService();
         var llm = new LlmService();
         var assembler = new TranscriptAssembler(repo, stt);
         var processor = new NoteProcessor(stt, ocr, llm, assembler);

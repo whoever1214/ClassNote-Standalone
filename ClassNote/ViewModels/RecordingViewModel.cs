@@ -51,9 +51,9 @@ public class RecordingViewModel : BaseViewModel
             // · 转写装配器负责"复用课堂期间已算好的块、只补缺的块"；
             // · OCR 队列让截图在录音期间就识别完，处理管线只读现成结果。
             var stt = SenseVoiceSttService.Shared;
-            // OCR 引擎由设置在「内置 Windows OCR / 内网 PaddleOCR 服务」之间切换；
-            // 队列与处理管线**共用同一个实例**，否则主备切换的冷却与计数会在两处各算一遍。
-            var ocr = OcrServiceFactory.Create(AppSettings.Instance.Snapshot());
+            // 截图识别固定用内置 Windows OCR（远程 OCR 服务在 v1.1.0 已移除）；
+            // 队列与处理管线**共用同一个实例**，避免两处各自初始化 WinRT 引擎。
+            var ocr = new WindowsOcrService();
             _ocrQueue = ocrQueue ?? new BackgroundOcrQueue(ocr,
                 (sid, seqNo, text) => LocalRepository.Instance.SetScreenshotOcr(sid, seqNo, text));
             _processor = new NoteProcessor(stt, ocr, new LlmService(),

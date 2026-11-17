@@ -61,11 +61,6 @@ public class AppSettingsData
     public string ClassroomTranscription { get; set; } = nameof(ClassroomTranscriptionMode.Auto);
 
     /// <summary>
-    /// 截图 OCR 引擎（内置 Windows OCR / 内网 PaddleOCR 服务），存枚举名。
-    /// 旧 settings.json 没有这个字段 → 反序列化后是空串 → <see cref="OcrEngines.FromStorage"/> 回退内置引擎，
-    /// 与升级前的行为完全一致。
-    /// </summary>
-    /// <summary>
     /// 截图送进模型的方式（见 <see cref="ScreenshotInputMode"/>）：Ocr / Vision / Both，存枚举名。
     /// 默认 <b>Vision</b>：图片直送多模态模型，公式、化学式、板书图形不会被本地 OCR 撕碎。
     /// 旧 settings.json 没有这个字段 → 反序列化后是空串 → 由 <see cref="ScreenshotInputModes.FromStorage"/>
@@ -94,26 +89,6 @@ public class AppSettingsData
     /// 实测真实数据里 ≤8 覆盖 73% 的相邻帧；调大更省，但可能丢掉"只改了一个字"的板书。
     /// </summary>
     public int VisionDedupThreshold { get; set; } = ScreenshotSelector.DefaultDedupThreshold;
-
-    public string OcrEngine { get; set; } = nameof(OcrEngineKind.Windows);
-
-    /// <summary>远程 OCR 服务地址（仅 <see cref="OcrEngineKind.PaddleHttp"/> 使用）。</summary>
-    public string OcrServiceUrl { get; set; } = "";
-
-    /// <summary>远程 OCR 的请求编码方式，存枚举名；必须与服务器实际部署方式一致。</summary>
-    public string OcrRequestFormat { get; set; } = nameof(ClassNote.Services.OcrRequestFormat.JsonBase64);
-
-    /// <summary>远程 OCR 服务的访问密钥（可留空；落盘前经 DPAPI 加密，与 LLM Key 同等对待）。</summary>
-    public string OcrServiceApiKey { get; set; } = "";
-
-    /// <summary>远程 OCR 单张截图的请求超时（秒）。</summary>
-    public int OcrTimeoutSeconds { get; set; } = OcrEngines.DefaultPaddleTimeoutSeconds;
-
-    /// <summary>
-    /// 远程 OCR 失败（连不上 / 超时 / 返回结构无法解析）时是否回退到内置 Windows OCR。
-    /// 默认开：宁可用精度差一点的本地结果，也不要因为内网服务抖动而让整节课的截图没有文字。
-    /// </summary>
-    public bool OcrFallbackToWindows { get; set; } = true;
 
     /// <summary>
     /// 触摸屏优化开关（长按 = 右键、单指拖动滚动、加宽滚动条与菜单项）。
@@ -205,7 +180,6 @@ public sealed class AppSettings
                 {
                     // 落盘的是 DPAPI 密文，读入时解密为内存明文（旧版明文兼容读取）
                     loaded.LlmApiKey = DpapiKeyProtector.Unprotect(loaded.LlmApiKey);
-                    loaded.OcrServiceApiKey = DpapiKeyProtector.Unprotect(loaded.OcrServiceApiKey);
                     MigrateLegacyFields(loaded);
                     return loaded;
                 }
@@ -244,7 +218,6 @@ public sealed class AppSettings
         // 落盘副本：Key 经 DPAPI 加密后写入，内存中的明文不受影响
         var forDisk = Clone(data);
         forDisk.LlmApiKey = DpapiKeyProtector.Protect(forDisk.LlmApiKey);
-        forDisk.OcrServiceApiKey = DpapiKeyProtector.Protect(forDisk.OcrServiceApiKey);
         var json = JsonSerializer.Serialize(forDisk, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_filePath, json);
     }
@@ -270,12 +243,6 @@ public sealed class AppSettings
         VisionMaxEdgePx = src.VisionMaxEdgePx,
         VisionJpegQuality = src.VisionJpegQuality,
         VisionDedupThreshold = src.VisionDedupThreshold,
-        OcrEngine = src.OcrEngine,
-        OcrServiceUrl = src.OcrServiceUrl,
-        OcrRequestFormat = src.OcrRequestFormat,
-        OcrServiceApiKey = src.OcrServiceApiKey,
-        OcrTimeoutSeconds = src.OcrTimeoutSeconds,
-        OcrFallbackToWindows = src.OcrFallbackToWindows,
         TouchOptimizations = src.TouchOptimizations,
     };
 }

@@ -13,7 +13,7 @@ public static class NoteProcessorFactory
     public static NoteProcessor CreateDefault(IOcrService? ocr = null, BackgroundOcrQueue? ocrQueue = null)
     {
         var stt = SenseVoiceSttService.Shared;
-        var ocrService = ocr ?? OcrServiceFactory.Create(AppSettings.Instance.Snapshot());
+        var ocrService = ocr ?? new WindowsOcrService();
         var repo = LocalRepository.Instance;
         return new NoteProcessor(stt, ocrService, new LlmService(),
             new TranscriptAssembler(repo, stt), ocrQueue);
