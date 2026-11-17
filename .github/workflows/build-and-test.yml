@@ -49,8 +49,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # ⚠️ 两个项目都要还原：ClassNote.sln 里只有主项目，测试项目不在解决方案内，
+      # 只 restore sln 会让后续 "--no-restore" 的测试构建因为缺 project.assets.json 直接失败
+      # （CI 第一次跑就是这样挂的）。
       - name: 还原依赖
-        run: dotnet restore ClassNote.sln
+        run: |
+          dotnet restore ClassNote.sln
+          dotnet restore ClassNote.Tests/ClassNote.Tests.csproj
 
       # 解决方案里只有主项目；测试项目单独构建（它引用主项目）。
       # 用 Release：与发布构建同一套优化设置，避免"Debug 下过、Release 下挂"。
